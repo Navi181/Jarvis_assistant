@@ -1,0 +1,21 @@
+name: Unpack
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unzip and commit
+        run: |
+          unzip -q jarvis-assistant.zip
+          rm jarvis-assistant.zip
+          rm -rf jarvis-assistant/.github
+          cp -a jarvis-assistant/. .
+          rm -rf jarvis-assistant
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "Add Jarvis project"
+          git push
