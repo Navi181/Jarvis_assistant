@@ -36,10 +36,14 @@ jobs:
           KS_B64: ${{ secrets.JARVIS_KEYSTORE_B64 }}
         run: |
           if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/jarvis.keystore"
-            echo "JARVIS_KEYSTORE_FILE=$RUNNER_TEMP/jarvis.keystore" >> "$GITHUB_ENV"
-            echo "JARVIS_KS_PASS=${{ secrets.JARVIS_KS_PASS }}" >> "$GITHUB_ENV"
-            echo "JARVIS_KEY_ALIAS=jarvis" >> "$GITHUB_ENV"
+            if printf '%s' "$KS_B64" | tr -d ' \n\r\t' | base64 -d > "$RUNNER_TEMP/jarvis.keystore" 2>/dev/null && [ -s "$RUNNER_TEMP/jarvis.keystore" ]; then
+              echo "JARVIS_KEYSTORE_FILE=$RUNNER_TEMP/jarvis.keystore" >> "$GITHUB_ENV"
+              echo "JARVIS_KS_PASS=${{ secrets.JARVIS_KS_PASS }}" >> "$GITHUB_ENV"
+              echo "JARVIS_KEY_ALIAS=jarvis" >> "$GITHUB_ENV"
+              echo "Signing key loaded."
+            else
+              echo "::warning::The JARVIS_KEYSTORE_B64 secret is not valid. Building with a temporary key instead."
+            fi
           fi
 
       - name: Build APK
