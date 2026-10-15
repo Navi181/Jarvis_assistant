@@ -1,3 +1,4 @@
+
 name: Unpack
 on: workflow_dispatch
 permissions:
@@ -9,8 +10,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unzip and commit
         run: |
-          unzip -q jarvis-assistant.zip
-          rm jarvis-assistant.zip
+          ZIP=$(find . -name '*.zip' -not -path './.git/*' | head -n1)
+          echo "Found zip: $ZIP"
+          if [ -z "$ZIP" ]; then echo "NO ZIP FOUND. Files in repo:"; ls -la; exit 1; fi
+          unzip -q "$ZIP"
+          rm "$ZIP"
           rm -rf jarvis-assistant/.github
           cp -a jarvis-assistant/. .
           rm -rf jarvis-assistant
