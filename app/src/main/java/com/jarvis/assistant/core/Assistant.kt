@@ -61,7 +61,7 @@ object Assistant {
             val t = tts ?: return@TextToSpeech
             if (status == TextToSpeech.SUCCESS) {
                 t.language = Locale.getDefault()
-                t.setPitch(0.95f)
+                applyVoice(t)
                 t.setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ASSISTANT)
@@ -77,6 +77,63 @@ object Assistant {
                 ttsReady = true
             }
         }
+    }
+
+    // ---------------------------------------------------------------- voice
+
+    /** Voices that Google's speech engine offers for the phone language (or English), in a stable order. */
+    private fun voiceChoices(t: TextToSpeech): List<android.speech.tts.Voice> = try {
+        val lang = Locale.getDefault().language
+        t.voices.orEmpty().filter { it.locale.language == lang || it.locale.language == "en" }.sortedBy { it.name }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    // Google voice ids that are male, best first. Used when the user hasn't picked one.
+    private val maleHints = listOf(
+        "en-in-x-end-local", "en-in-x-end-network", "en-gb-x-rjs-local", "en-gb-x-gbd-local",
+        "en-us-x-iom-local", "en-us-x-iol-local", "en-us-x-tpd-local", "en-us-x-iob-local"
+    )
+
+    private fun applyVoice(t: TextToSpeech) {
+        try {
+            t.setPitch(Prefs.voicePitch)
+            t.setSpeechRate(Prefs.voiceRate)
+            val all = voiceChoices(t)
+            val chosen = all.firstOrNull { it.name == Prefs.voiceName }
+                ?: maleHints.firstNotNullOfOrNull { h -> all.firstOrNull { it.name == h } }
+                ?: all.firstOrNull { it.name.lowercase().let { n -> "male" in n && "female" !in n } }
+            if (chosen != null) t.setVoice(chosen)
+        } catch (e: Exception) {
+            // keep the default voice
+        }
+    }
+
+    /** Re-reads pitch and speed from settings (after moving the slider). */
+    fun applyVoiceSettings() {
+        tts?.let { applyVoice(it) }
+    }
+
+    /** Switches to the next installed voice so you can find one you like by ear. Returns a label. */
+    fun cycleVoice(): String {
+        val t = tts ?: return "Voice not ready yet"
+        val list = voiceChoices(t)
+        if (list.isEmpty()) return "No other voices are installed"
+        val cur = try { t.voice?.name } catch (e: Exception) { null }
+        val next = list[(list.indexOfFirst { it.name == cur } + 1) % list.size]
+        try {
+            t.setVoice(next)
+            t.setPitch(Prefs.voicePitch)
+        } catch (e: Exception) {
+            return "That voice didn't work"
+        }
+        Prefs.voiceName = next.name
+        return "Voice ${list.indexOf(next) + 1} of ${list.size}"
+    }
+
+    fun previewVoice() {
+        tts?.stop()
+        say("Good day. I'm Jarvis, at your service.")
     }
 
     val busy: Boolean get() = phase.value != Phase.IDLE

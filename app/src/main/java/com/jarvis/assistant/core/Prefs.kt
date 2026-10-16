@@ -35,6 +35,20 @@ object Prefs {
         get() = str("picoKey")
         set(v) = put("picoKey", v.trim())
 
+    /** Name of the chosen text-to-speech voice ("" = pick a deep male voice automatically). */
+    var voiceName: String
+        get() = str("voiceName")
+        set(v) = put("voiceName", v)
+
+    /** Lower = deeper. 1.0 is the voice's natural pitch. */
+    var voicePitch: Float
+        get() = sp.getFloat("voicePitch", 0.78f)
+        set(v) = sp.edit().putFloat("voicePitch", v).apply()
+
+    var voiceRate: Float
+        get() = sp.getFloat("voiceRate", 0.95f)
+        set(v) = sp.edit().putFloat("voiceRate", v).apply()
+
     var callMe: String
         get() = str("callMe", "sir")
         set(v) = put("callMe", v)

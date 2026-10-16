@@ -5,10 +5,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.ContextCompat
 import com.jarvis.assistant.core.Assistant
+import com.jarvis.assistant.core.FocusLock
 import com.jarvis.assistant.core.Prefs
 import com.jarvis.assistant.core.Updater
 import com.jarvis.assistant.ui.JarvisUi
@@ -17,9 +19,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // During a focus session the back button does nothing.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!FocusLock.active()) moveTaskToBack(true)
+            }
+        })
         setContent { JarvisUi() }
         if (savedInstanceState == null) handle(intent)
         Updater.autoCheck(applicationContext)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // If the app was closed or restarted mid-session, pin the screen again.
+        if (FocusLock.active()) runCatching { startLockTask() }
     }
 
     override fun onNewIntent(intent: Intent) {

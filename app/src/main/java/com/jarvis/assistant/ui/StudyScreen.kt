@@ -55,8 +55,16 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import com.jarvis.assistant.core.Assistant
 import com.jarvis.assistant.core.Brain
 import com.jarvis.assistant.core.Prefs
@@ -64,6 +72,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private fun Context.findActivity(): Activity? {
+    var c: Context = this
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
 
 /** Study space: AI tutor (explain / quiz / flashcards / summary), focus timer, homework list. */
 @Composable
@@ -79,6 +96,14 @@ fun StudyScreen() {
     var minutes by remember { mutableIntStateOf(Prefs.focusMinutes) }
     var end by remember { mutableLongStateOf(Prefs.focusEnd) }
     val running = end > now
+    val ctx = LocalContext.current
+
+    // Pins the screen so Home and Recents stop working until the session ends (needs "Pin windows" switched on in Android).
+    fun lockOn() { ctx.findActivity()?.let { runCatching { it.startLockTask() } } }
+    fun lockOff() { ctx.findActivity()?.let { runCatching { it.stopLockTask() } } }
+
+    // No leaving through the back button while the timer runs.
+    BackHandler(enabled = running) { }
 
     LaunchedEffect(end) {
         while (end > System.currentTimeMillis()) {
@@ -90,6 +115,7 @@ fun StudyScreen() {
             val stale = now - end > 60_000
             Prefs.focusEnd = 0L
             end = 0L
+            lockOff()
             if (!stale) Assistant.say("Focus session complete. Well done. Take a short break.")
         }
     }
@@ -156,14 +182,34 @@ fun StudyScreen() {
                         FilterChip(selected = minutes == m, enabled = !running, onClick = { minutes = m; Prefs.focusMinutes = m }, label = { Text("$m min") })
                     }
                 }
-                Button(
-                    onClick = {
-                        if (running) { Prefs.focusEnd = 0L; end = 0L }
-                        else { val e = System.currentTimeMillis() + minutes * 60_000L; Prefs.focusEnd = e; now = System.currentTimeMillis(); end = e }
-                    },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Cyan, contentColor = Bg)
-                ) { Text(if (running) "Stop" else "Start focusing") }
+                if (running) {
+                    Text("Locked in until the timer ends", color = Cyan, fontSize = 15.sp)
+                    Text(
+                        "Emergency exit: press and hold here",
+                        color = InkDim, fontSize = 12.sp,
+                        modifier = Modifier
+                            .pointerInput(Unit) {
+                                detectTapGestures(onLongPress = { Prefs.focusEnd = 0L; end = 0L; lockOff() })
+                            }
+                            .padding(8.dp)
+                    )
+                } else {
+                    Button(
+                        onClick = {
+                            val e = System.currentTimeMillis() + minutes * 60_000L
+                            Prefs.focusEnd = e
+                            now = System.currentTimeMillis()
+                            end = e
+                            lockOn()
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Cyan, contentColor = Bg)
+                    ) { Text("Start focusing") }
+                    Text(
+                        "While it runs, back, Home and app switching are blocked. For the strongest lock, search “Pin windows” in Android Settings and switch it on, and allow Jarvis in Accessibility (Setup).",
+                        color = InkDim, fontSize = 12.sp, textAlign = TextAlign.Center
+                    )
+                }
             }
 
             // ---- tutor

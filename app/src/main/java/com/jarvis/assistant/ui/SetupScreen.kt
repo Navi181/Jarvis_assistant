@@ -36,6 +36,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,6 +45,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +64,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.jarvis.assistant.core.A11y
+import com.jarvis.assistant.core.Assistant
 import com.jarvis.assistant.core.Prefs
 
 @Composable
@@ -125,7 +130,7 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
         ) {
             Text("Set up Jarvis", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Light)
             Text(
-                "Five quick things and you're done. Everything is free.",
+                "A few quick things and you're done. Everything is free.",
                 color = InkDim, fontSize = 14.sp
             )
 
@@ -245,6 +250,33 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     Text("Jarvis crashed last time. Sharing the report helps get it fixed.", color = Warn, fontSize = 13.sp)
                     PrimaryButton("Share crash report") { com.jarvis.assistant.core.CrashLog.share(ctx) }
                 }
+            }
+
+            Card("6 · Voice", "Choose how Jarvis sounds. Move the slider left for a deeper voice, and tap Next voice until you find one you like.") {
+                var pitch by remember { mutableFloatStateOf(Prefs.voicePitch) }
+                var label by remember { mutableStateOf("") }
+                Text("Deeper  ←  →  Higher", color = InkDim, fontSize = 13.sp)
+                Slider(
+                    value = pitch,
+                    onValueChange = { pitch = it },
+                    onValueChangeFinished = { Prefs.voicePitch = pitch; Assistant.applyVoiceSettings(); Assistant.previewVoice() },
+                    valueRange = 0.55f..1.1f,
+                    colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PrimaryButton("Next voice") { label = Assistant.cycleVoice(); Assistant.previewVoice() }
+                    PrimaryButton("Test") { Assistant.previewVoice() }
+                }
+                if (label.isNotBlank()) Text(label, color = InkDim, fontSize = 13.sp)
+            }
+
+            Card("7 · WhatsApp auto-send & focus lock", "Optional. Lets Jarvis press Send in WhatsApp for you, and bring itself back if you leave during a focus session. It never reads or stores anything.") {
+                Status("Accessibility access", A11y.enabled(ctx))
+                PrimaryButton("Open accessibility settings") { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                Text(
+                    "Tap Jarvis in the list, then switch it on. If it is greyed out: Settings, Apps, Jarvis, the three dots at the top, Allow restricted settings, then try again.",
+                    color = InkDim, fontSize = 13.sp
+                )
             }
 
             Button(

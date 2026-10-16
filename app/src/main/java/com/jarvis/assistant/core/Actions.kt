@@ -122,7 +122,10 @@ object Actions {
         if (p.value.equals("whatsapp", true)) {
             val e164 = PhoneNumberUtils.formatNumberToE164(hit.number, Locale.getDefault().country) ?: hit.number
             val url = "https://wa.me/" + e164.filter { it.isDigit() } + "?text=" + Uri.encode(p.message)
-            return done(launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url))), p.reply.ifBlank { "WhatsApp message to ${hit.name} is ready. Just hit send." }, "I couldn't open WhatsApp.")
+            val auto = A11y.enabled(ctx)
+            if (auto) WhatsAppSender.arm()
+            val line = if (auto) "Sending your WhatsApp message to ${hit.name}." else "WhatsApp message to ${hit.name} is ready. Just hit send."
+            return done(launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(url))), line, "I couldn't open WhatsApp.")
         }
         val i = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(hit.number))).putExtra("sms_body", p.message)
         return done(launch(ctx, i), p.reply.ifBlank { "Message to ${hit.name} is ready. Just hit send." }, "I couldn't open your messaging app.")
