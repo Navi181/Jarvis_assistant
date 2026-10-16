@@ -1,25 +1,30 @@
-
 name: Unpack
-on: workflow_dispatch
+on:
+  push:
+    paths: ['*.zip']
+  workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 jobs:
   unpack:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Unzip and commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          ZIP=$(find . -name '*.zip' -not -path './.git/*' | head -n1)
-          echo "Found zip: $ZIP"
-          if [ -z "$ZIP" ]; then echo "NO ZIP FOUND. Files in repo:"; ls -la; exit 1; fi
-          unzip -q "$ZIP"
+          ZIP=$(find . -maxdepth 1 -name '*.zip' | head -n1)
+          if [ -z "$ZIP" ]; then echo "No zip found"; exit 0; fi
+          unzip -oq "$ZIP"
           rm "$ZIP"
           rm -rf jarvis-assistant/.github
           cp -a jarvis-assistant/. .
           rm -rf jarvis-assistant
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
+          git config user.name github-actions
+          git config user.email actions@github.com
           git add -A
-          git commit -m "Add Jarvis project"
+          git commit -m "Update Jarvis"
           git push
+          gh workflow run build.yml
