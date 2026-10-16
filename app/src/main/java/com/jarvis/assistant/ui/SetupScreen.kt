@@ -95,6 +95,7 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
     var provider by remember { mutableStateOf(Prefs.provider) }
     var gem by remember { mutableStateOf(Prefs.geminiKey) }
     var groq by remember { mutableStateOf(Prefs.groqKey) }
+    var claude by remember { mutableStateOf(Prefs.claudeKey) }
     var pico by remember { mutableStateOf(Prefs.picoKey) }
     var callMe by remember { mutableStateOf(Prefs.callMe) }
     var city by remember { mutableStateOf(Prefs.homeCity) }
@@ -151,13 +152,32 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                         onClick = { provider = "groq"; Prefs.provider = "groq" },
                         label = { Text("Groq") }
                     )
+                    FilterChip(
+                        selected = provider == "claude",
+                        onClick = { provider = "claude"; Prefs.provider = "claude" },
+                        label = { Text("Claude") }
+                    )
                 }
-                if (provider == "gemini") {
-                    KeyField("Gemini API key", gem) { gem = it; Prefs.geminiKey = it }
-                    Link("Get a free key: aistudio.google.com/apikey") { uri.openUri("https://aistudio.google.com/apikey") }
-                } else {
-                    KeyField("Groq API key", groq) { groq = it; Prefs.groqKey = it }
-                    Link("Get a free key: console.groq.com/keys") { uri.openUri("https://console.groq.com/keys") }
+                when (provider) {
+                    "gemini" -> {
+                        KeyField("Gemini API key", gem) { gem = it; Prefs.geminiKey = it }
+                        Link("Get a free key: aistudio.google.com/apikey") { uri.openUri("https://aistudio.google.com/apikey") }
+                    }
+                    "groq" -> {
+                        KeyField("Groq API key", groq) { groq = it; Prefs.groqKey = it }
+                        Link("Get a free key: console.groq.com/keys") { uri.openUri("https://console.groq.com/keys") }
+                    }
+                    else -> {
+                        KeyField("Claude API key (paid)", claude) { claude = it; Prefs.claudeKey = it }
+                        Link("Get a key: console.anthropic.com") { uri.openUri("https://console.anthropic.com/") }
+                    }
+                }
+                Text(
+                    "Tip: add more than one key. If one runs out of free quota, Jarvis switches to the next on its own.",
+                    color = InkDim, fontSize = 13.sp, lineHeight = 18.sp
+                )
+                if (com.jarvis.assistant.core.Llm.lastProblem.isNotBlank()) {
+                    Text("Last AI problem: " + com.jarvis.assistant.core.Llm.lastProblem, color = Warn, fontSize = 13.sp)
                 }
                 OutlinedTextField(
                     value = callMe,

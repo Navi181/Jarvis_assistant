@@ -3,7 +3,6 @@ package com.jarvis.assistant.core
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.IOException
 import java.text.DateFormat
 import java.util.Date
 
@@ -54,34 +53,37 @@ If a needed detail is missing (who to call, what time), use action "answer" and 
 Current date and time: ${now()}
 """.trimIndent()
 
-    private fun friendly(e: IOException, brain: Boolean): String {
-        val m = e.message.orEmpty()
-        return when {
-            "HTTP 429" in m -> "I've hit the free usage limit for the moment. Give me a minute."
-            "HTTP 400" in m || "HTTP 401" in m || "HTTP 403" in m -> "My API key doesn't seem to be valid. Please check it in setup."
-            else -> if (brain) "I can't reach my brain right now. Please check your internet connection." else "I can't reach the internet right now."
-        }
+    /** Plain-words reason an AI call failed, with what to do about it. */
+    internal fun friendly(f: LlmFailure): String = when (f.kind) {
+        LlmFailure.Kind.NO_KEY -> "I need an AI key for that. Add one in setup. Gemini and Groq are free."
+        LlmFailure.Kind.QUOTA -> "${f.providerName}'s free quota is used up for now. Add a second key in setup and I'll switch to it automatically, or try again in a few minutes."
+        LlmFailure.Kind.BAD_KEY -> "${f.providerName} didn't accept my key. Please check it in setup."
+        LlmFailure.Kind.NETWORK -> "I can't reach the internet right now."
+        LlmFailure.Kind.SERVER -> "${f.providerName} is busy at the moment. Please try again in a moment."
+        LlmFailure.Kind.OTHER -> "${f.providerName} gave me an answer I couldn't use" + (if (f.code != 0) " (code ${f.code})" else "") + ". Please try again."
     }
 
     private fun llmPlan(text: String, history: List<Msg>): Plan {
-        if (Prefs.activeKey.isBlank()) {
+        if (!Prefs.hasAnyKey) {
             return Plan(
                 "answer",
-                reply = "I can do calls, texts, alarms, reminders, notes and maths offline. For anything else I need a free " +
-                    (if (Prefs.provider == "groq") "Groq" else "Gemini") + " key. You can add it in setup."
+                reply = "I can do calls, texts, alarms, reminders, notes and maths offline. For anything else I need a free Gemini or Groq key. You can add it in setup."
             )
         }
         return try {
             parse(Llm.chat(systemPrompt(), history, text, json = true))
-        } catch (e: IOException) {
-            Plan("answer", reply = friendly(e, true))
+        } catch (e: LlmFailure) {
+            Plan("answer", reply = friendly(e))
         } catch (e: Exception) {
             Plan("answer", reply = "Sorry, I got confused by that one. Could you say it again?")
         }
     }
 
     internal fun parse(raw: String): Plan {
-        val cleaned = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        // Some providers wrap the JSON in extra words or code fences, so take just the braces.
+        val start = raw.indexOf('{')
+        val end = raw.lastIndexOf('}')
+        val cleaned = if (start in 0 until end) raw.substring(start, end + 1) else raw.trim()
         val o = JSONObject(cleaned)
         return Plan(
             action = o.optString("action", "answer"),
@@ -120,11 +122,11 @@ Current date and time: ${now()}
     }
 
     private fun text(system: String, user: String, search: Boolean): String {
-        if (Prefs.activeKey.isBlank()) return "I need a free Gemini or Groq key for that. You can add it in setup."
+        if (!Prefs.hasAnyKey) return "I need a free Gemini or Groq key for that. You can add it in setup."
         return try {
             clean(Llm.answer(system, user, search))
-        } catch (e: IOException) {
-            friendly(e, false)
+        } catch (e: LlmFailure) {
+            friendly(e)
         } catch (e: Exception) {
             "Sorry, I couldn't work that out."
         }

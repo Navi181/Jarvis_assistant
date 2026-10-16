@@ -32,6 +32,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -42,6 +45,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
@@ -49,6 +53,8 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -68,6 +74,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -95,6 +102,15 @@ fun MainScreen(onSettings: () -> Unit) {
     val partial by Assistant.partial.collectAsState()
     val msgs by Assistant.messages.collectAsState()
     var handsFree by remember { mutableStateOf(Prefs.handsFree) }
+    var typed by remember { mutableStateOf("") }
+
+    fun sendTyped() {
+        val t = typed.trim()
+        if (t.isNotEmpty()) {
+            Assistant.submit(t)
+            typed = ""
+        }
+    }
 
     fun hasMic() = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
@@ -142,6 +158,7 @@ fun MainScreen(onSettings: () -> Unit) {
         Column(
             Modifier
                 .fillMaxSize()
+                .imePadding()
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -209,8 +226,32 @@ fun MainScreen(onSettings: () -> Unit) {
                 }
             }
 
+            // keyboard
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = typed,
+                    onValueChange = { typed = it },
+                    placeholder = { Text("Type a command…", color = InkDim) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { sendTyped() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Cyan,
+                        unfocusedBorderColor = Outline,
+                        focusedTextColor = Ink,
+                        unfocusedTextColor = Ink,
+                        cursorColor = Cyan
+                    )
+                )
+                IconButton(onClick = { sendTyped() }, enabled = typed.isNotBlank()) {
+                    Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send", tint = if (typed.isNotBlank()) Cyan else InkDim)
+                }
+            }
+
             // mic
-            Box(Modifier.padding(top = 14.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.padding(top = 12.dp), contentAlignment = Alignment.Center) {
                 MicButton(phase, level, ::tapMic)
             }
 

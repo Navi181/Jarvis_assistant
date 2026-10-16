@@ -20,11 +20,20 @@
 ## Small blocks (each ends with a saved zip; say "next block" to continue)
 | Block | What | Needs you? |
 |---|---|---|
-| A | Save progress + this checklist | no (done) |
-| B1 | Read-through for build errors: core + services | no |
-| B2 | Read-through for build errors: screens | no |
+| A | Save progress + this checklist | no. DONE |
+| B1 | Read-through for build errors: core + services | no. DONE: no syntax errors in all 31 files; Android calls checked by hand |
+| B2 | Read-through for build errors: screens | DONE |
 | C | Phone-only install guide (README) | no |
-| D | Link GitHub, upload, first cloud build | yes: link GitHub |
-| E | Fix whatever the cloud build reports (repeat until green) | no |
+| D | Repo Navi181/Jarvis_assistant created by hand on GitHub, project unpacked, secrets added | DONE |
+| E | Fix whatever the cloud build reports | IN PROGRESS: fix 1 (PhotoFinder latLong) done, Run tests PASSED on build #6; signing-key secret paste was invalid, workflow made tolerant |
 | F | Install on your phone, first-run walk-through, test auto-update | yes: tap install |
 | G | Extra usefulness (optional): more skills you want | you choose |
+
+
+## Change requests from the phone test (Oct 16)
+| Block | What | State |
+|---|---|---|
+| H1 | Brain: real errors, auto-failover between keys, Claude option, typing box | DONE (not yet built in cloud) |
+| H2 | Intro screen, dark solar-system theme, roomier layout, new icon | next |
+| H3 | Manly voice, WhatsApp sending, focus lock | todo |
+| H4 | Wake word without Picovoice/company email | todo |

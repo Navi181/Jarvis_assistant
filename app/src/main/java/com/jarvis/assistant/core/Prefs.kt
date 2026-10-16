@@ -14,7 +14,7 @@ object Prefs {
     private fun str(k: String, d: String = "") = sp.getString(k, d) ?: d
     private fun put(k: String, v: String) = sp.edit().putString(k, v).apply()
 
-    /** "gemini" or "groq" */
+    /** "gemini", "groq" or "claude": the one tried first. The others with a key are used as backups. */
     var provider: String
         get() = str("provider", "gemini")
         set(v) = put("provider", v)
@@ -26,6 +26,10 @@ object Prefs {
     var groqKey: String
         get() = str("groqKey")
         set(v) = put("groqKey", v.trim())
+
+    var claudeKey: String
+        get() = str("claudeKey")
+        set(v) = put("claudeKey", v.trim())
 
     var picoKey: String
         get() = str("picoKey")
@@ -96,5 +100,14 @@ object Prefs {
     fun addNote(n: String) = put("notes", (notes() + n.trim()).joinToString("\u001F"))
     fun clearNotes() = put("notes", "")
 
-    val activeKey: String get() = if (provider == "groq") groqKey else geminiKey
+    fun keyFor(p: String): String = when (p) {
+        "groq" -> groqKey
+        "claude" -> claudeKey
+        else -> geminiKey
+    }
+
+    val activeKey: String get() = keyFor(provider)
+
+    /** True when at least one AI provider has a key. */
+    val hasAnyKey: Boolean get() = geminiKey.isNotBlank() || groqKey.isNotBlank() || claudeKey.isNotBlank()
 }

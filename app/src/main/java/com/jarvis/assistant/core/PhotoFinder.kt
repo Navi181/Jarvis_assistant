@@ -157,10 +157,10 @@ object PhotoFinder {
 
     private fun latLon(ctx: Context, uri: Uri): DoubleArray? = try {
         val u = if (Build.VERSION.SDK_INT >= 29) MediaStore.setRequireOriginal(uri) else uri
-                ctx.contentResolver.openInputStream(u)?.use { s ->
+        ctx.contentResolver.openInputStream(u)?.use { s ->
             val a = FloatArray(2)
             if (ExifInterface(s).getLatLong(a)) doubleArrayOf(a[0].toDouble(), a[1].toDouble()) else null
-                }
+        }
     } catch (e: Exception) {
         null
     }

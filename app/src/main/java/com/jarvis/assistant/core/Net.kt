@@ -31,7 +31,7 @@ object Net {
         try {
             c.requestMethod = method
             c.connectTimeout = 10_000
-            c.readTimeout = 25_000
+            c.readTimeout = 45_000
             c.setRequestProperty("User-Agent", "Jarvis-Android")
             headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
             if (body != null) {
