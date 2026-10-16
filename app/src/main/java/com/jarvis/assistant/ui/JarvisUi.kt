@@ -61,10 +61,13 @@ enum class Tab(val label: String, val icon: ImageVector) {
 fun JarvisUi() {
     val ctx = LocalContext.current
     JarvisTheme {
+        var intro by remember { mutableStateOf(true) }
         var signedIn by remember { mutableStateOf(Prefs.signedIn) }
         var tab by remember { mutableStateOf(if (Prefs.onboarded) Tab.Home else Tab.Setup) }
 
-        if (!signedIn) {
+        if (intro) {
+            IntroScreen { intro = false }
+        } else if (!signedIn) {
             SignInScreen { signedIn = true }
         } else {
             Column(Modifier.fillMaxSize().background(Bg)) {

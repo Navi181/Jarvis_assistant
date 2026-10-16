@@ -44,7 +44,7 @@ fun SkillsScreen(onRun: () -> Unit) {
         Backdrop()
         LazyColumn(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)).padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Text("Skills", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp, modifier = Modifier.padding(top = 12.dp))
@@ -54,7 +54,7 @@ fun SkillsScreen(onRun: () -> Unit) {
                 item { Text(title, color = Cyan, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 10.dp)) }
                 items(phrases) { p ->
                     Row(
-                        Modifier.fillMaxWidth().glass().clickable { onRun(); Assistant.submit(p) }.padding(horizontal = 16.dp, vertical = 14.dp),
+                        Modifier.fillMaxWidth().glass().clickable { onRun(); Assistant.submit(p) }.padding(horizontal = 18.dp, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("“$p”", color = Ink, fontSize = 15.sp, modifier = Modifier.weight(1f))

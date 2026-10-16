@@ -121,7 +121,7 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Text("Set up Jarvis", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Light)
             Text(
@@ -269,7 +269,7 @@ private fun Card(title: String, subtitle: String, content: @Composable () -> Uni
         color = Panel,
         border = BorderStroke(1.dp, Outline)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(title, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
             Text(subtitle, color = InkDim, fontSize = 13.sp, lineHeight = 18.sp)
             content()

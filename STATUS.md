@@ -34,6 +34,6 @@
 | Block | What | State |
 |---|---|---|
 | H1 | Brain: real errors, auto-failover between keys, Claude option, typing box | DONE (not yet built in cloud) |
-| H2 | Intro screen, dark solar-system theme, roomier layout, new icon | next |
+| H2 | Intro screen, dark solar-system theme, roomier layout, new icon | DONE (not yet built in cloud) |
 | H3 | Manly voice, WhatsApp sending, focus lock | todo |
 | H4 | Wake word without Picovoice/company email | todo |

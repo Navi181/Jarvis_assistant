@@ -119,8 +119,8 @@ fun StudyScreen() {
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Text("Study", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
             Text("Say “quiz me on photosynthesis” any time, or use the tools below.", color = InkDim, fontSize = 14.sp)
@@ -132,7 +132,7 @@ fun StudyScreen() {
             }
 
             // ---- focus timer
-            Column(Modifier.fillMaxWidth().glass().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth().glass().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Focus session", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
                 val total = minutes * 60_000L
                 val remaining = if (running) (end - now).coerceAtLeast(0L) else total
@@ -167,7 +167,7 @@ fun StudyScreen() {
             }
 
             // ---- tutor
-            Column(Modifier.fillMaxWidth().glass().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().glass().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("AI tutor", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
                 OutlinedTextField(
                     value = topic, onValueChange = { topic = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -191,7 +191,7 @@ fun StudyScreen() {
             }
 
             // ---- homework list
-            Column(Modifier.fillMaxWidth().glass().padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.fillMaxWidth().glass().padding(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Homework & goals", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
                 tasks.forEachIndexed { i, t ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
