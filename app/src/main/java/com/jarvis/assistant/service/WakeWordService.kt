@@ -21,6 +21,12 @@ import androidx.core.content.ContextCompat
 import ai.picovoice.porcupine.Porcupine
 import ai.picovoice.porcupine.PorcupineManager
 import ai.picovoice.porcupine.PorcupineManagerCallback
+import com.jarvis.assistant.core.WakeModel
+import org.json.JSONObject
+import org.vosk.Model
+import org.vosk.Recognizer
+import org.vosk.android.RecognitionListener
+import org.vosk.android.SpeechService
 import com.jarvis.assistant.MainActivity
 import com.jarvis.assistant.R
 import com.jarvis.assistant.core.Assistant
@@ -53,6 +59,12 @@ class WakeWordService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var porcupine: PorcupineManager? = null
+    private var vosk: SpeechService? = null
+    private var voskModel: Model? = null
+    private var lastWake = 0L
+
+    // Heard "Jarvis", or a close mishearing of it.
+    private val wakeWord = Regex("\\b(jarvis|jarvas|jervis|jarvus|garvis|jar vis|jar viss)\\b")
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -74,29 +86,67 @@ class WakeWordService : Service() {
         }
         running = true
         Assistant.onMicNeeded = { handler.post { stopWake() } }
-        Assistant.onMicFree = { handler.postDelayed({ if (running && porcupine == null) beginWake() }, 500) }
+        Assistant.onMicFree = { handler.postDelayed({ if (running && porcupine == null && vosk == null) beginWake() }, 500) }
         return START_STICKY
     }
 
     private fun beginWake(): Boolean {
         stopWake()
-        val key = Prefs.picoKey
-        if (key.isBlank()) {
-            warn("Add your free Picovoice key in Jarvis setup to enable hands-free.")
+        // A Picovoice key, if you added one, is a little more accurate. Otherwise the free built-in model is used.
+        return if (Prefs.picoKey.isNotBlank()) beginPorcupine() else beginVosk()
+    }
+
+    private fun beginPorcupine(): Boolean = try {
+        porcupine = PorcupineManager.Builder()
+            .setAccessKey(Prefs.picoKey)
+            .setKeyword(Porcupine.BuiltInKeyword.JARVIS)
+            .setSensitivity(0.7f)
+            .build(applicationContext, PorcupineManagerCallback { onWake() })
+        porcupine?.start()
+        true
+    } catch (e: Exception) {
+        warn("Couldn't start wake word: " + (e.message ?: "unknown error"))
+        false
+    }
+
+    private fun beginVosk(): Boolean {
+        if (!WakeModel.ready(applicationContext)) {
+            warn("Open Jarvis setup and download the wake-word voice model first.")
             return false
         }
         return try {
-            porcupine = PorcupineManager.Builder()
-                .setAccessKey(key)
-                .setKeyword(Porcupine.BuiltInKeyword.JARVIS)
-                .setSensitivity(0.7f)
-                .build(applicationContext, PorcupineManagerCallback { onWake() })
-            porcupine?.start()
+            val model = voskModel ?: Model(WakeModel.dir(applicationContext).absolutePath).also { voskModel = it }
+            val service = SpeechService(Recognizer(model, 16000.0f), 16000.0f)
+            service.startListening(voskListener)
+            vosk = service
             true
         } catch (e: Exception) {
             warn("Couldn't start wake word: " + (e.message ?: "unknown error"))
             false
         }
+    }
+
+    private val voskListener = object : RecognitionListener {
+        private fun check(json: String?) {
+            if (json.isNullOrBlank()) return
+            val text = try {
+                val o = JSONObject(json)
+                (o.optString("partial", "") + " " + o.optString("text", "")).lowercase()
+            } catch (e: Exception) {
+                return
+            }
+            val now = System.currentTimeMillis()
+            if (wakeWord.containsMatchIn(text) && now - lastWake > 3000) {
+                lastWake = now
+                onWake()
+            }
+        }
+
+        override fun onPartialResult(hypothesis: String?) = check(hypothesis)
+        override fun onResult(hypothesis: String?) = check(hypothesis)
+        override fun onFinalResult(hypothesis: String?) {}
+        override fun onError(exception: Exception?) {}
+        override fun onTimeout() {}
     }
 
     private fun stopWake() {
@@ -106,6 +156,12 @@ class WakeWordService : Service() {
         } catch (_: Exception) {
         }
         porcupine = null
+        try {
+            vosk?.stop()
+            vosk?.shutdown()
+        } catch (_: Exception) {
+        }
+        vosk = null
     }
 
     /** Called on Porcupine's audio thread. */
@@ -125,6 +181,11 @@ class WakeWordService : Service() {
         Assistant.onMicFree = null
         handler.removeCallbacksAndMessages(null)
         stopWake()
+        try {
+            voskModel?.close()
+        } catch (_: Exception) {
+        }
+        voskModel = null
         super.onDestroy()
     }
 

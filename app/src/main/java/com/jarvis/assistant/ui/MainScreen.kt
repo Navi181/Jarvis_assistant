@@ -136,8 +136,8 @@ fun MainScreen(onSettings: () -> Unit) {
                 micLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 return
             }
-            if (Prefs.picoKey.isBlank()) {
-                Toast.makeText(ctx, "Add your free Picovoice key in setup first.", Toast.LENGTH_LONG).show()
+            if (Prefs.picoKey.isBlank() && !com.jarvis.assistant.core.WakeModel.ready(ctx)) {
+                Toast.makeText(ctx, "Download the free wake-word model in setup first.", Toast.LENGTH_LONG).show()
                 onSettings()
                 return
             }
@@ -166,7 +166,7 @@ fun MainScreen(onSettings: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "J.A.R.V.I.S",
-                    color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Light, letterSpacing = 5.sp,
+                    color = Ink, fontFamily = Fonts.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onSettings) {

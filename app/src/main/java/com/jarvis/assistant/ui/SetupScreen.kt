@@ -128,7 +128,7 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Text("Set up Jarvis", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Light)
+            Text("Set up Jarvis", color = Ink, fontFamily = Fonts.title, fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Text(
                 "A few quick things and you're done. Everything is free.",
                 color = InkDim, fontSize = 14.sp
@@ -195,13 +195,36 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
             }
 
             // 3 hands-free
-            Card("3 · Hands-free wake word", "Say “Jarvis” any time. Detection runs on your phone; nothing is uploaded while waiting.") {
-                KeyField("Picovoice AccessKey", pico) { pico = it; Prefs.picoKey = it }
-                Link("Get a free key: console.picovoice.ai") { uri.openUri("https://console.picovoice.ai/") }
+            Card("3 · Hands-free wake word", "Say “Jarvis” any time. It runs on your phone, free, with no account or key. Use Wi-Fi for the one-time download.") {
+                var ready by remember { mutableStateOf(com.jarvis.assistant.core.WakeModel.ready(ctx)) }
+                var pct by remember { mutableIntStateOf(-1) }
+                Status("Wake-word voice model (about 40 MB)", ready)
+                if (!ready) {
+                    PrimaryButton(if (pct in 0..99) "Downloading… $pct%" else "Download wake-word model") {
+                        if (pct !in 0..99) {
+                            pct = 0
+                            scope.launch {
+                                val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    com.jarvis.assistant.core.WakeModel.download(ctx) { p -> pct = p }
+                                }
+                                pct = -1
+                                ready = ok
+                                android.widget.Toast.makeText(
+                                    ctx,
+                                    if (ok) "Wake-word model ready. Switch on Hands-free on the main screen."
+                                    else "Download failed: " + com.jarvis.assistant.core.WakeModel.lastError,
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
+                }
                 Text(
                     "Then switch on “Hands-free” on the main screen.",
                     color = InkDim, fontSize = 13.sp
                 )
+                KeyField("Picovoice AccessKey (optional, slightly more accurate)", pico) { pico = it; Prefs.picoKey = it }
+                Link("Optional free key: console.picovoice.ai") { uri.openUri("https://console.picovoice.ai/") }
             }
 
             // 4 system
@@ -302,7 +325,7 @@ private fun Card(title: String, subtitle: String, content: @Composable () -> Uni
         border = BorderStroke(1.dp, Outline)
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(title, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            Text(title, color = Ink, fontFamily = Fonts.title, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
             Text(subtitle, color = InkDim, fontSize = 13.sp, lineHeight = 18.sp)
             content()
         }

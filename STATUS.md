@@ -23,7 +23,7 @@
 | A | Save progress + this checklist | no. DONE |
 | B1 | Read-through for build errors: core + services | no. DONE: no syntax errors in all 31 files; Android calls checked by hand |
 | B2 | Read-through for build errors: screens | DONE |
-| C | Phone-only install guide (README) | no |
+| C | Phone-only install guide (README) | DONE |
 | D | Repo Navi181/Jarvis_assistant created by hand on GitHub, project unpacked, secrets added | DONE |
 | E | Fix whatever the cloud build reports | IN PROGRESS: fix 1 (PhotoFinder latLong) done, Run tests PASSED on build #6; signing-key secret paste was invalid, workflow made tolerant |
 | F | Install on your phone, first-run walk-through, test auto-update | yes: tap install |
@@ -36,4 +36,5 @@
 | H1 | Brain: real errors, auto-failover between keys, Claude option, typing box | DONE (not yet built in cloud) |
 | H2 | Intro screen, dark solar-system theme, roomier layout, new icon | DONE (not yet built in cloud) |
 | H3 | Manly voice, WhatsApp auto-send, focus lock | DONE (not yet built in cloud) |
-| H4 | Wake word without Picovoice/company email | todo |
+| H4 | Free wake word (Vosk) with one-time model download; Picovoice optional | DONE (not yet built in cloud) |
+| H5 | Fixed AI 404s (live model discovery, new model names), news/facts without a key, WhatsApp groups, realistic plasma orb, Jarvis-style fonts, Study layout fix, Google sign-in as the main button, calendar / install app / Amazon search commands | DONE (not yet built in cloud) |

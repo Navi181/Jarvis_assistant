@@ -13,12 +13,25 @@ object WhatsAppSender {
     @Volatile
     private var until = 0L
 
+    /** Name of the WhatsApp group to pick in the share list, or "" for a normal chat that is already open. */
+    @Volatile
+    var group: String = ""
+        private set
+
     fun arm() {
+        group = ""
         until = System.currentTimeMillis() + 25_000L
+    }
+
+    /** Groups can't be opened by link, so Jarvis finds the group in WhatsApp's own list; that takes longer. */
+    fun armGroup(name: String) {
+        group = name
+        until = System.currentTimeMillis() + 50_000L
     }
 
     fun disarm() {
         until = 0L
+        group = ""
     }
 
     fun armed(): Boolean = System.currentTimeMillis() < until

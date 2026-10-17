@@ -61,11 +61,46 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    // Wake word ("Jarvis"), free tier: https://console.picovoice.ai
+    // Optional more-accurate wake word, free tier: https://console.picovoice.ai
     implementation("ai.picovoice:porcupine-android:3.0.2")
+    // Free offline wake word with no account or key (Vosk). The voice model is downloaded once from inside the app.
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
     // On-device photo understanding (scenes + counting faces). Nothing is uploaded.
     implementation("com.google.mlkit:image-labeling:17.0.9")
     implementation("com.google.mlkit:face-detection:16.1.7")
 
     testImplementation("junit:junit:4.13.2")
 }
+
+// Fonts (Fraunces for titles, Inter for text, JetBrains Mono for small labels) are fetched while building,
+// so no font files need to be uploaded by hand. If a download fails the app falls back to the system font.
+val fontsDir = layout.buildDirectory.dir("generated/fontAssets")
+val fetchFonts = tasks.register("fetchFonts") {
+    val out = fontsDir.get().asFile
+    outputs.dir(out)
+    doLast {
+        val base = "https://raw.githubusercontent.com/google/fonts/main/ofl/"
+        val files = mapOf(
+            "fraunces.ttf" to "fraunces/Fraunces%5BSOFT%2CWONK%2Copsz%2Cwght%5D.ttf",
+            "fraunces_italic.ttf" to "fraunces/Fraunces-Italic%5BSOFT%2CWONK%2Copsz%2Cwght%5D.ttf",
+            "inter.ttf" to "inter/Inter%5Bopsz%2Cwght%5D.ttf",
+            "jetbrainsmono.ttf" to "jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf"
+        )
+        val dir = File(out, "fonts")
+        dir.mkdirs()
+        files.forEach { (name, path) ->
+            val f = File(dir, name)
+            if (!f.exists() || f.length() < 10_000) {
+                try {
+                    java.net.URL(base + path).openStream().use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                } catch (e: Exception) {
+                    f.delete()
+                    println("Font $name not downloaded: ${e.message}")
+                }
+            }
+        }
+    }
+}
+android.sourceSets.getByName("main").assets.srcDir(fontsDir)
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach { dependsOn(fetchFonts) }

@@ -95,7 +95,7 @@ fun JarvisUi() {
                                 SetupScreen(canGoBack = Prefs.onboarded) {
                                     Prefs.onboarded = true
                                     // After setup, hands-free turns itself on if the wake-word key is present.
-                                    if (Prefs.picoKey.isNotBlank() && !Prefs.handsFree) Prefs.handsFree = true
+                                    if ((Prefs.picoKey.isNotBlank() || com.jarvis.assistant.core.WakeModel.ready(ctx)) && !Prefs.handsFree) Prefs.handsFree = true
                                     if (Prefs.handsFree) WakeWordService.start(ctx)
                                     tab = Tab.Home
                                 }

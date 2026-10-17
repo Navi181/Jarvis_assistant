@@ -148,18 +148,21 @@ fun StudyScreen() {
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Text("Study", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
+            Text("Study", color = Ink, fontFamily = Fonts.title, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp)
             Text("Say “quiz me on photosynthesis” any time, or use the tools below.", color = InkDim, fontSize = 14.sp)
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("middle school", "high school", "college").forEach { l ->
-                    FilterChip(selected = level == l, onClick = { level = l; Prefs.studyLevel = l }, label = { Text(l) })
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("middle school" to "Middle", "high school" to "High school", "college" to "College").forEach { (l, shown) ->
+                    FilterChip(
+                        selected = level == l, onClick = { level = l; Prefs.studyLevel = l }, modifier = Modifier.weight(1f),
+                        label = { Text(shown, fontSize = 13.sp, maxLines = 1, softWrap = false, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+                    )
                 }
             }
 
             // ---- focus timer
             Column(Modifier.fillMaxWidth().glass().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Focus session", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Text("Focus session", color = Ink, fontFamily = Fonts.title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 val total = minutes * 60_000L
                 val remaining = if (running) (end - now).coerceAtLeast(0L) else total
                 val progress = if (total > 0) remaining.toFloat() / total else 0f
@@ -175,11 +178,15 @@ fun StudyScreen() {
                         )
                     }
                     val sec = (remaining / 1000).toInt()
-                    Text(String.format("%02d:%02d", sec / 60, sec % 60), color = Ink, fontSize = 34.sp, fontWeight = FontWeight.Light)
+                    Text(String.format("%02d:%02d", sec / 60, sec % 60), color = Ink, fontFamily = Fonts.mono, fontSize = 32.sp, fontWeight = FontWeight.Medium)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(15, 25, 45, 60).forEach { m ->
-                        FilterChip(selected = minutes == m, enabled = !running, onClick = { minutes = m; Prefs.focusMinutes = m }, label = { Text("$m min") })
+                        FilterChip(
+                            selected = minutes == m, enabled = !running, onClick = { minutes = m; Prefs.focusMinutes = m },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("$m min", fontSize = 12.sp, maxLines = 1, softWrap = false, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+                        )
                     }
                 }
                 if (running) {

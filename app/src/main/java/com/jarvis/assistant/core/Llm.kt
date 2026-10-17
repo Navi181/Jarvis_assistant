@@ -23,11 +23,16 @@ class LlmFailure(val kind: Kind, val provider: String, val code: Int = 0) : Exce
  * so a used-up free quota on one does not stop Jarvis. Blocking: call from a background thread.
  */
 object Llm {
-    // The "-latest" names are aliases, so they keep working when Google retires specific versions.
-    // Each model has its own free quota, so falling through the list also helps with limits.
-    private val GEMINI_MODELS = listOf("gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash")
-    private const val GROQ_MODEL = "llama-3.3-70b-versatile"
+    // Google and Groq retire models often (gemini-flash-latest and Groq's Llama 3.3 both stopped working for free keys),
+    // so the live model lists are fetched with your key and the best working model is used. These names are only the backup.
+    private val GEMINI_BACKUP = listOf("gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite")
+    private val GROQ_BACKUP = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile")
     private const val CLAUDE_MODEL = "claude-haiku-5-5"
+
+    @Volatile private var geminiList: List<String> = emptyList()
+    @Volatile private var geminiAt = 0L
+    @Volatile private var groqList: List<String> = emptyList()
+    @Volatile private var groqAt = 0L
 
     /** Last failure, for the Setup screen. */
     @Volatile
@@ -105,30 +110,115 @@ object Llm {
         return LlmFailure(kind, provider, code)
     }
 
-    /** Errors where trying another Gemini model can help. */
-    private fun worthNextModel(e: IOException): Boolean = httpCode(e) in setOf(404, 429, 500, 502, 503, 504) || e is SocketTimeoutException
+    // ------------------------------------------------------------------ model discovery
+
+    private val notChat = listOf(
+        "tts", "live", "image", "embedding", "audio", "transcribe", "robotics", "omni", "computer", "antigravity",
+        "research", "veo", "lyria", "imagen", "banana", "learnlm", "translate", "exp"
+    )
+
+    private fun geminiRank(id: String): Double? {
+        if (!id.startsWith("gemini-") || notChat.any { it in id }) return null
+        val flash = "flash" in id
+        val pro = "pro" in id
+        if (!flash && !pro) return null
+        val ver = Regex("gemini-(\\d+(?:\\.\\d+)?)").find(id)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+        var score = ver * 10.0 + when {
+            flash && "lite" !in id -> 100.0
+            flash -> 60.0
+            else -> 40.0
+        }
+        if ("preview" in id) score -= 30.0
+        return score
+    }
+
+    private fun geminiModels(key: String): List<String> {
+        val now = System.currentTimeMillis()
+        val cached = geminiList
+        if (cached.isNotEmpty() && now - geminiAt < 3_600_000L) return cached
+        val found = try {
+            val arr = JSONObject(Net.get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", mapOf("x-goog-api-key" to key)))
+                .optJSONArray("models") ?: JSONArray()
+            (0 until arr.length()).mapNotNull { i ->
+                val m = arr.getJSONObject(i)
+                val id = m.optString("name").removePrefix("models/")
+                val methods = m.optJSONArray("supportedGenerationMethods")
+                val ok = methods != null && (0 until methods.length()).any { methods.optString(it) == "generateContent" }
+                val rank = geminiRank(id)
+                if (ok && rank != null) id to rank else null
+            }.sortedByDescending { it.second }.map { it.first }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val list = (found + GEMINI_BACKUP).distinct()
+        geminiList = list
+        // if the list couldn't be fetched, look again in 5 minutes instead of an hour
+        geminiAt = if (found.isEmpty()) now - 3_300_000L else now
+        return list
+    }
+
+    private fun groqModels(key: String): List<String> {
+        val now = System.currentTimeMillis()
+        val cached = groqList
+        if (cached.isNotEmpty() && now - groqAt < 3_600_000L) return cached
+        val found = try {
+            val arr = JSONObject(Net.get("https://api.groq.com/openai/v1/models", mapOf("Authorization" to "Bearer $key")))
+                .optJSONArray("data") ?: JSONArray()
+            (0 until arr.length()).map { arr.getJSONObject(it).optString("id") }.filter { it.isNotBlank() }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val bad = listOf("whisper", "tts", "guard", "safeguard", "orpheus", "playai", "embed", "compound")
+        val chat = found.filter { id -> bad.none { it in id.lowercase() } }
+            .sortedBy { id -> GROQ_BACKUP.indexOf(id).let { if (it < 0) 50 else it } }
+        val compound = found.filter { "compound" in it }.sortedBy { if (it.endsWith("mini")) 1 else 0 }
+        val list = (chat + GROQ_BACKUP).distinct()
+        groqList = list
+        groqCompound = compound
+        groqAt = if (found.isEmpty()) now - 3_300_000L else now
+        return list
+    }
+
+    @Volatile private var groqCompound: List<String> = emptyList()
+
+    private fun nextModelWorthTrying(e: IOException): Boolean = httpCode(e) in setOf(400, 403, 404, 408, 413, 429, 500, 502, 503, 504) || e is SocketTimeoutException
 
     // ------------------------------------------------------------------ Gemini
 
     private fun geminiCall(key: String, body: JSONObject): String {
+        val models = geminiModels(key).toMutableList()
+        // the model that worked last time goes first
+        val good = geminiGood
+        if (good != null && good in models) {
+            models.remove(good)
+            models.add(0, good)
+        }
         var last: IOException? = null
-        for (model in GEMINI_MODELS) {
+        for (model in models.take(5)) {
             try {
-                return Net.post(
+                val res = Net.post(
                     "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",
                     mapOf("x-goog-api-key" to key), body.toString()
                 )
+                geminiGood = model
+                return res
             } catch (e: IOException) {
                 last = e
-                if (!worthNextModel(e)) throw e
+                if (!nextModelWorthTrying(e)) throw e
             }
         }
+        // the saved list may be stale: forget it so the next question fetches a fresh one
+        geminiAt = 0L
         throw last ?: IOException("no model")
     }
 
+    @Volatile private var geminiGood: String? = null
+
     private fun geminiText(res: String): String {
         val parts = JSONObject(res).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")
-        return (0 until parts.length()).joinToString(" ") { parts.getJSONObject(it).optString("text", "") }.trim()
+        return (0 until parts.length()).map { parts.getJSONObject(it) }
+            .filter { !it.optBoolean("thought", false) }
+            .joinToString(" ") { it.optString("text", "") }.trim()
     }
 
     private fun gemini(key: String, system: String, history: List<Msg>, user: String, json: Boolean, temp: Double): String {
@@ -154,36 +244,78 @@ object Llm {
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", user)))))
         if (search) body.put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
-        return geminiText(geminiCall(key, body))
+        return try {
+            geminiText(geminiCall(key, body))
+        } catch (e: IOException) {
+            // if live search itself is refused, still answer from the model's own knowledge
+            if (search) geminiAnswer(key, system, user, false) else throw e
+        }
     }
 
     // ------------------------------------------------------------------ Groq
 
     private fun groqPost(key: String, body: JSONObject): String {
         val res = Net.post("https://api.groq.com/openai/v1/chat/completions", mapOf("Authorization" to "Bearer $key"), body.toString())
-        return JSONObject(res).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+        return JSONObject(res).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content", "").trim()
+    }
+
+    /** Tries models in order; moves on when a model is gone, rate-limited or refuses the request. */
+    private fun groqTry(key: String, models: List<String>, build: (String, Boolean) -> JSONObject, json: Boolean): String {
+        var last: IOException? = null
+        for (m in models.take(5)) {
+            try {
+                return groqPost(key, build(m, json))
+            } catch (e: IOException) {
+                last = e
+                if (httpCode(e) == 400 && json) {
+                    // some models don't support JSON mode: ask again without it
+                    try {
+                        return groqPost(key, build(m, false))
+                    } catch (e2: IOException) {
+                        last = e2
+                    }
+                }
+                if (!nextModelWorthTrying(last!!)) throw last
+            }
+        }
+        groqAt = 0L
+        throw last ?: IOException("no model")
     }
 
     private fun groq(key: String, system: String, history: List<Msg>, user: String, json: Boolean, temp: Double): String {
-        val messages = JSONArray().put(JSONObject().put("role", "system").put("content", system))
-        history.forEach {
-            messages.put(JSONObject().put("role", if (it.fromUser) "user" else "assistant").put("content", it.text))
+        val models = groqModels(key)
+        val build = { model: String, useJson: Boolean ->
+            val messages = JSONArray().put(JSONObject().put("role", "system").put("content", system))
+            history.forEach {
+                messages.put(JSONObject().put("role", if (it.fromUser) "user" else "assistant").put("content", it.text))
+            }
+            messages.put(JSONObject().put("role", "user").put("content", user))
+            val body = JSONObject().put("model", model).put("messages", messages).put("temperature", temp)
+            if (useJson) body.put("response_format", JSONObject().put("type", "json_object"))
+            body
         }
-        messages.put(JSONObject().put("role", "user").put("content", user))
-        val body = JSONObject().put("model", GROQ_MODEL).put("messages", messages).put("temperature", temp)
-        if (json) body.put("response_format", JSONObject().put("type", "json_object"))
-        return groqPost(key, body)
+        return groqTry(key, models, build, json)
     }
 
     private fun groqAnswer(key: String, system: String, user: String, search: Boolean): String {
-        val body = JSONObject()
-            .put("model", if (search) "groq/compound" else GROQ_MODEL)
-            .put(
+        val models = groqModels(key)
+        val build = { model: String, _: Boolean ->
+            JSONObject().put("model", model).put(
                 "messages", JSONArray()
                     .put(JSONObject().put("role", "system").put("content", system))
                     .put(JSONObject().put("role", "user").put("content", user))
             )
-        return groqPost(key, body)
+        }
+        if (search) {
+            val compound = groqCompound.ifEmpty { listOf("groq/compound", "groq/compound-mini") }
+            try {
+                val out = groqTry(key, compound, build, false)
+                if (out.isNotBlank()) return out
+            } catch (e: IOException) {
+                // fall through to a plain model
+            }
+        }
+        return groqTry(key, models, build, false)
     }
 
     // ------------------------------------------------------------------ Claude (needs a paid Anthropic API key)

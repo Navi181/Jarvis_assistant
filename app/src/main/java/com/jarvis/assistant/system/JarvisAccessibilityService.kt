@@ -21,6 +21,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var sending = false
     private var tries = 0
+    private var picked = false
     private var lastBringBack = 0L
 
     private val allowed = listOf(
@@ -71,14 +72,22 @@ class JarvisAccessibilityService : AccessibilityService() {
                 return
             }
             val root = rootInActiveWindow
+            val wanted = WhatsAppSender.group
+            if (wanted.isNotEmpty() && !picked) {
+                if (root != null && pickGroup(root, wanted)) picked = true
+                tries++
+                if (tries < 65) handler.postDelayed(this, 600) else sending = false
+                return
+            }
             val button = if (root != null) findSend(root) else null
             if (button != null && button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                 WhatsAppSender.disarm()
                 sending = false
+                picked = false
                 return
             }
             tries++
-            if (tries < 14) handler.postDelayed(this, 500) else sending = false
+            if (tries < (if (wanted.isNotEmpty()) 30 else 14)) handler.postDelayed(this, 500) else sending = false
         }
     }
 
@@ -86,6 +95,7 @@ class JarvisAccessibilityService : AccessibilityService() {
         if (sending) return
         sending = true
         tries = 0
+        picked = false
         handler.postDelayed(sendRunnable, 800)
     }
 
@@ -108,6 +118,56 @@ class JarvisAccessibilityService : AccessibilityService() {
             if (r != null) return r
         }
         return null
+    }
+
+    // ------------------------------------------------------------------ WhatsApp group picking
+
+    private fun clickable(n: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        var c = n
+        var d = 0
+        while (c != null && d < 8) {
+            if (c.isClickable) return c
+            c = c.parent
+            d++
+        }
+        return null
+    }
+
+    private fun findEdit(n: AccessibilityNodeInfo?, depth: Int = 0): AccessibilityNodeInfo? {
+        if (n == null || depth > 25) return null
+        if (n.className?.toString() == "android.widget.EditText") return n
+        for (i in 0 until n.childCount) findEdit(n.getChild(i), depth + 1)?.let { return it }
+        return null
+    }
+
+    private fun findSearch(n: AccessibilityNodeInfo?, depth: Int = 0): AccessibilityNodeInfo? {
+        if (n == null || depth > 25) return null
+        if (n.isClickable && n.contentDescription?.toString().equals("Search", ignoreCase = true)) return n
+        for (i in 0 until n.childCount) findSearch(n.getChild(i), depth + 1)?.let { return it }
+        return null
+    }
+
+    /** One step per call: tap the group if it is on screen, else open search and type its name. Returns true once tapped. */
+    private fun pickGroup(root: AccessibilityNodeInfo, name: String): Boolean {
+        val hits = root.findAccessibilityNodeInfosByText(name)
+        if (hits != null) {
+            val row = hits.firstOrNull {
+                it.className?.toString() != "android.widget.EditText" && it.text?.toString().equals(name, ignoreCase = true)
+            } ?: hits.firstOrNull { it.className?.toString() != "android.widget.EditText" }
+            val target = clickable(row)
+            if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        }
+        val edit = findEdit(root)
+        if (edit != null) {
+            if (edit.text?.toString() != name) {
+                val args = android.os.Bundle()
+                args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, name)
+                edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            }
+            return false
+        }
+        findSearch(root)?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        return false
     }
 
     override fun onInterrupt() {}

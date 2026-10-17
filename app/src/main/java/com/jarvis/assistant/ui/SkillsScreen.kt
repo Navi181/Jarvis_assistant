@@ -47,7 +47,7 @@ fun SkillsScreen(onRun: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Skills", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp, modifier = Modifier.padding(top = 12.dp))
+                Text("Skills", color = Ink, fontFamily = Fonts.title, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp, modifier = Modifier.padding(top = 12.dp))
                 Text("Tap any phrase to try it. Or just say it.", color = InkDim, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
             }
             groups.forEach { (title, phrases) ->

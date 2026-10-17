@@ -82,6 +82,14 @@ object LocalParser {
         Regex("^(?:summarize|summarise|summary of)\\s+(.+)$").find(t)?.let { return Plan("tutor", target = it.groupValues[1].trim(), value = "summary") }
         Regex("^(?:explain|teach me|help me understand)\\s+(.+)$").find(t)?.let { return Plan("tutor", target = it.groupValues[1].trim(), value = "explain") }
 
+        // ---- shopping, installing apps, calendar
+        Regex("^(?:search|find|look (?:for|up)|show me|buy|order|check)\\s+(.+?)\\s+(?:on|in|at|from)\\s+(amazon|flipkart)(?:\\s+.*)?$").find(t)?.let {
+            return Plan("shop", target = it.groupValues[1].replace(Regex("^(?:the )?(?:price of|prices? for)\\s+"), "").trim(), value = it.groupValues[2])
+        }
+        Regex("^(?:install|download|get me)(?: the)?(?: app)?\\s+(.+?)(?: app)?(?: from (?:the )?play ?store)?$").find(t)?.let {
+            if (!it.groupValues[1].contains("update")) return Plan("install_app", target = it.groupValues[1].trim())
+        }
+
         // ---- live facts: answered directly from the web, never as links
         if (Regex("\\b(who won|who is winning|who'?s winning|who wins|live score|scores? (?:of|for)|latest news|news (?:about|on|today)|breaking news|stock price|share price|price of|exchange rate|who is the current|current (?:president|prime minister|ceo|champion)|when is the next|yesterday'?s|last night'?s|today'?s (?:match|game))\\b").containsMatchIn(t)) {
             return Plan("web_answer", target = t)
@@ -205,6 +213,10 @@ object LocalParser {
         val split = Regex("\\s+(?:saying that|saying|that says|and say|to say|say that|that)\\s+").find(rest)
         val target = if (split != null) rest.substring(0, split.range.first) else rest
         val msg = if (split != null) rest.substring(split.range.last + 1) else ""
+        val g = Regex("^(?:the\\s+)?(.+?)\\s+(?:whatsapp\\s+)?group(?:\\s+chat)?$").find(target.trim())
+        if (g != null && g.groupValues[1].isNotBlank()) {
+            return Plan("sms", target = g.groupValues[1].trim(), message = msg.trim(), value = "whatsapp_group")
+        }
         return Plan("sms", target = target.trim(), message = msg.trim(), value = if (wa) "whatsapp" else "")
     }
 

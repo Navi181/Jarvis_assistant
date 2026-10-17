@@ -108,7 +108,7 @@ fun IntroScreen(onDone: () -> Unit) {
             }
             Text(
                 "JARVIS",
-                color = Ink, fontSize = 38.sp, fontWeight = FontWeight.Light,
+                color = Ink, fontFamily = Fonts.title, fontSize = 38.sp, fontWeight = FontWeight.Bold,
                 letterSpacing = (22 - 12 * title.value).sp,
                 modifier = Modifier.padding(top = 28.dp).alpha(title.value)
             )

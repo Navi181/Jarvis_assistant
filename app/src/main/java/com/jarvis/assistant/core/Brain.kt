@@ -24,7 +24,7 @@ Your replies are spoken aloud: at most 2 short sentences, plain text, no markdow
 Respond with ONLY a JSON object with exactly these keys: action, target, message, hour, minute, seconds, value, reply.
 action must be one of:
 - call (target = contact name or phone number)
-- sms (target = contact, message = text; value = "whatsapp" if they asked for WhatsApp)
+- sms (target = contact, message = text; value = "whatsapp" if they asked for WhatsApp; value = "whatsapp_group" and target = the group name if they want to message a WhatsApp group)
 - alarm (hour 0-23, minute 0-59, message = optional label)
 - timer (seconds)
 - reminder (message = what to remind; either seconds for "in 10 minutes" with value "timer", or hour and minute with value "alarm")
@@ -41,6 +41,9 @@ action must be one of:
 - note_add (message = the note)
 - note_read
 - web_answer (target = the question; use for anything needing live or recent facts: sports results, news, prices, "who is the current ...")
+- shop (target = item, value = amazon | flipkart; opens the store search)
+- install_app (target = app name; opens the Play Store)
+- calendar (message = event title, hour and minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length in seconds; opens the calendar prefilled)
 - tutor (value = explain | quiz | flashcards | summary; target = topic)
 - photo (target = the user's own words describing which photo to open, e.g. "sunset in goa last week")
 - update (check for and install a new version of this app)
@@ -65,15 +68,18 @@ Current date and time: ${now()}
 
     private fun llmPlan(text: String, history: List<Msg>): Plan {
         if (!Prefs.hasAnyKey) {
+            val free = if (Fallback.looksLikeQuestion(text)) clean(Fallback.answer(text).orEmpty()) else ""
             return Plan(
                 "answer",
-                reply = "I can do calls, texts, alarms, reminders, notes and maths offline. For anything else I need a free Gemini or Groq key. You can add it in setup."
+                reply = free.ifBlank { "I can do calls, texts, alarms, reminders, notes and maths offline. For anything else I need a free Gemini or Groq key. You can add it in setup." }
             )
         }
         return try {
             parse(Llm.chat(systemPrompt(), history, text, json = true))
         } catch (e: LlmFailure) {
-            Plan("answer", reply = friendly(e))
+            // the AI is unavailable: still try to answer questions straight from the web
+            val free = if (Fallback.looksLikeQuestion(text)) clean(Fallback.answer(text).orEmpty()) else ""
+            Plan("answer", reply = free.ifBlank { friendly(e) })
         } catch (e: Exception) {
             Plan("answer", reply = "Sorry, I got confused by that one. Could you say it again?")
         }
@@ -100,7 +106,16 @@ Current date and time: ${now()}
     // ------------------------------------------------------------------ direct answers & tutoring (plain text)
 
     /** Live facts answered directly (Gemini with Google Search, or Groq's built-in web search). No links. */
-    fun webAnswer(question: String): String = text(
+    fun webAnswer(question: String): String {
+        // news is fetched straight from Google News: faster and always current
+        if (Regex("\\b(news|headlines)\\b", RegexOption.IGNORE_CASE).containsMatchIn(question)) {
+            val quick = clean(Fallback.answer(question).orEmpty())
+            if (quick.isNotBlank()) return quick
+        }
+        return webAnswerAi(question)
+    }
+
+    private fun webAnswerAi(question: String): String = text(
         "You are JARVIS. Today is ${now()}. Answer the question directly with the actual fact (winner, score, number, name) in at most 2 short spoken sentences. " +
             "Use up-to-date web information. Never give links, sources or markdown. If you truly can't find it, say so briefly.",
         question, true
@@ -122,11 +137,11 @@ Current date and time: ${now()}
     }
 
     private fun text(system: String, user: String, search: Boolean): String {
-        if (!Prefs.hasAnyKey) return "I need a free Gemini or Groq key for that. You can add it in setup."
+        if (!Prefs.hasAnyKey) return (if (search) clean(Fallback.answer(user).orEmpty()) else "").ifBlank { "I need a free Gemini or Groq key for that. You can add it in setup." }
         return try {
             clean(Llm.answer(system, user, search))
         } catch (e: LlmFailure) {
-            friendly(e)
+            (if (search) clean(Fallback.answer(user).orEmpty()) else "").ifBlank { friendly(e) }
         } catch (e: Exception) {
             "Sorry, I couldn't work that out."
         }

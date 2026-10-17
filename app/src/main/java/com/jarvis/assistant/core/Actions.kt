@@ -57,6 +57,9 @@ object Actions {
         "note_clear" -> { Prefs.clearNotes(); Outcome("All your notes are cleared.") }
         "notifications" -> notifications(ctx)
         "briefing" -> briefing(ctx)
+        "shop" -> shop(ctx, p)
+        "install_app" -> installApp(ctx, p)
+        "calendar" -> calendar(ctx, p)
         "web_answer" -> withContext(Dispatchers.IO) { info(Brain.webAnswer(p.target.ifBlank { p.message })) }
         "tutor" -> withContext(Dispatchers.IO) { info(Brain.tutor(p.value, p.target, true)) }
         "time" -> info("It's " + LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())) + ".")
@@ -114,6 +117,14 @@ object Actions {
     private suspend fun sms(ctx: Context, p: Plan): Outcome {
         val t = p.target.trim()
         if (t.isEmpty()) return ask("Who should I message?", p)
+        if (p.value.equals("whatsapp_group", true)) {
+            if (p.message.isBlank()) return ask("What should I say to the $t group?", p)
+            val auto = A11y.enabled(ctx)
+            if (auto) WhatsAppSender.armGroup(t)
+            val share = Intent(Intent.ACTION_SEND).setType("text/plain").setPackage("com.whatsapp").putExtra(Intent.EXTRA_TEXT, p.message)
+            val line = if (auto) "Sending your message to the $t group." else "Pick the $t group and hit send. Turn on Accessibility in setup and I'll do it for you."
+            return done(launch(ctx, share), line, "I couldn't open WhatsApp.")
+        }
         if (!granted(ctx, Manifest.permission.READ_CONTACTS) && t.any { it.isLetter() }) {
             return Outcome("I need contacts permission to find $t. Please grant it in setup.")
         }
@@ -244,6 +255,45 @@ object Actions {
         val (label, pkg) = best ?: return Outcome("I couldn't find an app called ${p.target}.")
         val i = pm.getLaunchIntentForPackage(pkg) ?: return Outcome("I couldn't open $label.")
         return done(launch(ctx, i), p.reply.ifBlank { "Opening $label." }, "I couldn't open $label.")
+    }
+
+    private fun shop(ctx: Context, p: Plan): Outcome {
+        val q = p.target.trim()
+        if (q.isEmpty()) return ask("What should I look for?", p)
+        val site = if (p.value.equals("flipkart", true)) "https://www.flipkart.com/search?q=" else "https://www.amazon.in/s?k="
+        return done(launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(site + Uri.encode(q)))), "Here's $q.", "I couldn't open the store.")
+    }
+
+    private fun installApp(ctx: Context, p: Plan): Outcome {
+        val q = p.target.trim()
+        if (q.isEmpty()) return ask("Which app should I get?", p)
+        val ok = launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=" + Uri.encode(q) + "&c=apps")).setPackage("com.android.vending")) ||
+            launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?c=apps&q=" + Uri.encode(q))))
+        return done(ok, "Opening the Play Store for $q. Tap Install.", "I couldn't open the Play Store.")
+    }
+
+    /** Opens the calendar with the event filled in. Plan: message = title, hour/minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length. */
+    private fun calendar(ctx: Context, p: Plan): Outcome {
+        val title = p.message.trim().ifBlank { "Blocked time" }
+        val c = java.util.Calendar.getInstance()
+        val v = p.value.trim().lowercase()
+        if (v == "tomorrow") c.add(java.util.Calendar.DAY_OF_YEAR, 1)
+        else Regex("(\\d{4})-(\\d{2})-(\\d{2})").find(v)?.let {
+            c.set(it.groupValues[1].toInt(), it.groupValues[2].toInt() - 1, it.groupValues[3].toInt())
+        }
+        if (p.hour in 0..23) {
+            c.set(java.util.Calendar.HOUR_OF_DAY, p.hour); c.set(java.util.Calendar.MINUTE, p.minute.coerceIn(0, 59))
+        } else {
+            c.add(java.util.Calendar.HOUR_OF_DAY, 1); c.set(java.util.Calendar.MINUTE, 0)
+        }
+        c.set(java.util.Calendar.SECOND, 0)
+        val start = c.timeInMillis
+        val end = start + (if (p.seconds > 0) p.seconds * 1000L else 3_600_000L)
+        val i = Intent(Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
+            .putExtra(android.provider.CalendarContract.Events.TITLE, title)
+            .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
+            .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, end)
+        return done(launch(ctx, i), p.reply.ifBlank { "Your calendar is open with \"$title\". Tap Save." }, "I couldn't open your calendar.")
     }
 
     private fun playMusic(ctx: Context, p: Plan): Outcome {
