@@ -1,3 +1,5 @@
+import java.net.URL
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -93,7 +95,7 @@ val fetchFonts = tasks.register("fetchFonts") {
             val f = File(dir, name)
             if (!f.exists() || f.length() < 10_000) {
                 try {
-                    java.net.URL(base + path).openStream().use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                    URL(base + path).openStream().use { input -> f.outputStream().use { output -> input.copyTo(output) } }
                 } catch (e: Exception) {
                     f.delete()
                     println("Font $name not downloaded: ${e.message}")
