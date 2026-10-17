@@ -279,12 +279,11 @@ object Actions {
 
     /** The calendar to write into: a writable one, the main Google one first. */
     private fun writableCalendar(ctx: Context): Long? {
-        val C = android.provider.CalendarContract.Calendars
         var best: Long? = null
         var bestScore = -1
         try {
             ctx.contentResolver.query(
-                C.CONTENT_URI, arrayOf(C._ID, C.IS_PRIMARY, C.ACCOUNT_TYPE, C.CALENDAR_ACCESS_LEVEL, C.VISIBLE),
+                android.provider.CalendarContract.Calendars.CONTENT_URI, arrayOf(android.provider.CalendarContract.Calendars._ID, android.provider.CalendarContract.Calendars.IS_PRIMARY, android.provider.CalendarContract.Calendars.ACCOUNT_TYPE, android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, android.provider.CalendarContract.Calendars.VISIBLE),
                 null, null, null
             )?.use { c ->
                 while (c.moveToNext()) {
@@ -325,15 +324,14 @@ object Actions {
             val id = writableCalendar(ctx)
             if (id != null) {
                 try {
-                    val E = android.provider.CalendarContract.Events
                     val values = android.content.ContentValues().apply {
-                        put(E.CALENDAR_ID, id)
-                        put(E.TITLE, title)
-                        put(E.DTSTART, start)
-                        put(E.DTEND, end)
-                        put(E.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+                        put(android.provider.CalendarContract.Events.CALENDAR_ID, id)
+                        put(android.provider.CalendarContract.Events.TITLE, title)
+                        put(android.provider.CalendarContract.Events.DTSTART, start)
+                        put(android.provider.CalendarContract.Events.DTEND, end)
+                        put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
                     }
-                    if (ctx.contentResolver.insert(E.CONTENT_URI, values) != null) {
+                    if (ctx.contentResolver.insert(android.provider.CalendarContract.Events.CONTENT_URI, values) != null) {
                         return Outcome(p.reply.ifBlank { "Done. \"$title\" is in your calendar for $whenText." })
                     }
                 } catch (e: Exception) {
