@@ -30,7 +30,7 @@ object Fonts {
             FontFamily(
                 listOf(400, 500, 600, 700).map { w ->
                     Font(
-                        ctx.assets, path, FontWeight(w),
+                        path, ctx.assets, FontWeight(w),
                         if (italic) FontStyle.Italic else FontStyle.Normal,
                         FontVariation.Settings(FontVariation.weight(w))
                     )
