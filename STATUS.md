@@ -41,3 +41,11 @@
 | H6 | Calendar read/write with permission, key cleaning + real error detail in Setup, deeper default voice, hands-free works without a download (Google recogniser fallback) and hears Jarvis misspellings | DONE (not yet built in cloud) |
 | H6b | Music: asks Spotify / Amazon Music / Joytify, opens the song in that app and presses Play | DONE (not yet built in cloud) |
 | H7 | Phone agent: say any job; Jarvis reads the screen and taps/types through any app (stops before payments, deletes, passwords). Permissions, hands-free and accessibility prompt now run automatically after sign-in | DONE (not yet built in cloud) |
+| H8 | Keyboard typing now visible (roomier input, less clutter), small orange listening orb over other apps, "Set as default assistant" via Android role request, deeper man voice (pitch-shifted), real Bluetooth/Wi-Fi toggles, screen reading, memory, personality/length/language settings, any-chapter tutor, voice-set calendar events | DONE (not yet built in cloud) |
+| H9a | Voice reads codes and numbers digit by digit (flight 6E6770 → "6 E 6 7 7 0"), drops markdown symbols and links when speaking | DONE (not yet built in cloud) |
+
+### Plan for the next requests (each is its own small block)
+- H9b: Long answers on request: "elaborate / explain in detail / tell me more" gives a full answer (news: full story list, then drill into any item); short stays the default for quick questions
+- H9c: Answer anything: web-grounded answers for any topic, step-by-step explanations, follow-up memory in the conversation
+- H9d: Control everything: more toggles (flashlight, DND, hotspot, brightness, volume, airplane, rotation, location) through quick settings + settings pages, open any app/setting, system actions
+- H9e: Always-listening: foreground service with a glowing orb notification and wake word while screen is locked (Android limits mic access when the phone is fully off; a locked phone works, a powered-off phone cannot)

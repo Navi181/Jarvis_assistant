@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -110,7 +111,12 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
     val batteryOk = (ctx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(ctx.packageName)
 
     val overlayOk = Settings.canDrawOverlays(ctx)
+    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { tick++ }
     val isDefault = runCatching {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val rm = ctx.getSystemService(android.app.role.RoleManager::class.java)
+            if (rm != null && rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)) return@runCatching true
+        }
         val a = Settings.Secure.getString(ctx.contentResolver, "assistant").orEmpty()
         val v = Settings.Secure.getString(ctx.contentResolver, "voice_interaction_service").orEmpty()
         a.contains(ctx.packageName) || v.contains(ctx.packageName)
@@ -234,13 +240,29 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
             Card("4 · Make Jarvis your phone's assistant", "Power-button long-press and headset button open Jarvis, like Google Assistant.") {
                 Status("Default digital assistant", isDefault)
                 PrimaryButton("Choose Jarvis as default assistant") {
-                    val i = Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
-                    try { ctx.startActivity(i) } catch (_: Exception) {
-                        ctx.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                    var asked = false
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        try {
+                            val rm = ctx.getSystemService(android.app.role.RoleManager::class.java)
+                            if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) {
+                                roleLauncher.launch(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+                                asked = true
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                    if (!asked) {
+                        try { ctx.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) } catch (_: Exception) {
+                            ctx.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                        }
                     }
                 }
+                Text(
+                    "A box will ask “Set Jarvis as default digital assistant?”. Tap Set as default. If you do it from Android's own settings instead: Settings, Apps, Choose default apps, Digital assistant app, Device assistance app, Jarvis, then tap OK on the warning.",
+                    color = InkDim, fontSize = 13.sp
+                )
                 Spacer(Modifier.height(6.dp))
-                Status("Display over other apps (lets hands-free open apps & calls)", overlayOk)
+                Status("Display over other apps (shows a small orange orb when Jarvis is listening, and lets hands-free open apps)", overlayOk)
                 PrimaryButton("Allow display over other apps") {
                     ctx.startActivity(
                         Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
@@ -294,6 +316,42 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     PrimaryButton("Test") { Assistant.previewVoice() }
                 }
                 if (label.isNotBlank()) Text(label, color = InkDim, fontSize = 13.sp)
+                var deep by remember { mutableStateOf(Prefs.deepVoice) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Deep male voice (works with any phone voice)", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = deep, onCheckedChange = { deep = it; Prefs.deepVoice = it; Assistant.applyVoiceSettings(); Assistant.previewVoice() })
+                }
+                PrimaryButton("Get more voices (Speech Services by Google)") {
+                    try {
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.tts")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (_: Exception) {
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts")))
+                    }
+                }
+            }
+
+            Card("8 · Make it yours", "Personality, answer length, language and memory.") {
+                var personality by remember { mutableStateOf(Prefs.personality) }
+                var len by remember { mutableStateOf(Prefs.answerLen) }
+                var lang by remember { mutableStateOf(Prefs.language) }
+                var orb by remember { mutableStateOf(Prefs.listenOrb) }
+                Text("Personality", color = InkDim, fontSize = 13.sp)
+                Choice(listOf("witty" to "Witty", "formal" to "Formal", "friendly" to "Friendly", "sarcastic" to "Sarcastic"), personality) { personality = it; Prefs.personality = it }
+                Text("Answer length", color = InkDim, fontSize = 13.sp)
+                Choice(listOf("short" to "Short", "normal" to "Normal", "detailed" to "Detailed"), len) { len = it; Prefs.answerLen = it }
+                Text("Language (listening and speaking)", color = InkDim, fontSize = 13.sp)
+                Choice(
+                    listOf("en-IN" to "English", "hi-IN" to "हिन्दी", "kn-IN" to "ಕನ್ನಡ", "ta-IN" to "தமிழ்", "te-IN" to "తెలుగు", "ml-IN" to "മലയാളം", "mr-IN" to "मराठी", "bn-IN" to "বাংলা"),
+                    lang
+                ) { lang = it; Prefs.language = it; Assistant.applyVoiceSettings() }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Small orange orb while listening in other apps", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = orb, onCheckedChange = { orb = it; Prefs.listenOrb = it })
+                }
+                Text(
+                    "Tell Jarvis “remember that …” and it keeps it. Say “what do you remember about me” to hear it, or “forget everything”.",
+                    color = InkDim, fontSize = 13.sp
+                )
             }
 
             Card("7 · WhatsApp auto-send & focus lock", "Optional. Lets Jarvis press Send in WhatsApp for you, and bring itself back if you leave during a focus session. It never reads or stores anything.") {
@@ -316,6 +374,21 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                 Text("Skip for now", color = InkDim)
             }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun Choice(options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEach { (value, label) ->
+            FilterChip(
+                selected = selected == value, onClick = { onPick(value) },
+                label = { Text(label, fontSize = 13.sp, maxLines = 1, softWrap = false) }
+            )
         }
     }
 }

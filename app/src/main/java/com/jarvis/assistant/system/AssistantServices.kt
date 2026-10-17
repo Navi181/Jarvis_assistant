@@ -55,3 +55,19 @@ class JarvisSession(context: Context) : VoiceInteractionSession(context) {
         hide()
     }
 }
+
+/**
+ * Android wants every assistant to ship a speech recogniser. Jarvis does its listening itself, so this one simply
+ * declines, and apps fall back to the normal system recogniser.
+ */
+class JarvisRecognitionService : android.speech.RecognitionService() {
+    override fun onStartListening(recognizerIntent: Intent?, listener: Callback?) {
+        try {
+            listener?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onCancel(listener: Callback?) {}
+    override fun onStopListening(listener: Callback?) {}
+}

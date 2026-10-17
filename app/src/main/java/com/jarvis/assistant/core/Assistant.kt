@@ -5,6 +5,9 @@ import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.media.PlaybackParams
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -57,10 +60,11 @@ object Assistant {
 
     fun init(a: Application) {
         app = a
-        tts = TextToSpeech(a) { status ->
+        val google = try { a.packageManager.getPackageInfo("com.google.android.tts", 0); "com.google.android.tts" } catch (e: Exception) { null }
+        tts = TextToSpeech(a, { status ->
             val t = tts ?: return@TextToSpeech
             if (status == TextToSpeech.SUCCESS) {
-                t.language = Locale.getDefault()
+                if (t.setLanguage(Locale.forLanguageTag(Prefs.language)) < TextToSpeech.LANG_AVAILABLE) t.language = Locale.getDefault()
                 applyVoice(t)
                 t.setAudioAttributes(
                     AudioAttributes.Builder()
@@ -70,20 +74,20 @@ object Assistant {
                 )
                 t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) {}
-                    override fun onDone(id: String?) { main.post { afterSpeech() } }
+                    override fun onDone(id: String?) { main.post { if (id == "jarvis_syn") synthDone?.invoke(true) else afterSpeech() } }
                     @Deprecated("Deprecated in Java")
-                    override fun onError(id: String?) { main.post { afterSpeech() } }
+                    override fun onError(id: String?) { main.post { if (id == "jarvis_syn") synthDone?.invoke(false) else afterSpeech() } }
                 })
                 ttsReady = true
             }
-        }
+        }, google)
     }
 
     // ---------------------------------------------------------------- voice
 
     /** Voices that Google's speech engine offers for the phone language (or English), in a stable order. */
     private fun voiceChoices(t: TextToSpeech): List<android.speech.tts.Voice> = try {
-        val lang = Locale.getDefault().language
+        val lang = Prefs.language.substringBefore('-')
         t.voices.orEmpty().filter { it.locale.language == lang || it.locale.language == "en" }.sortedBy { it.name }
     } catch (e: Exception) {
         emptyList()
@@ -97,7 +101,11 @@ object Assistant {
 
     private fun applyVoice(t: TextToSpeech) {
         try {
-            t.setPitch(Prefs.voicePitch)
+            if (t.setLanguage(Locale.forLanguageTag(Prefs.language)) < TextToSpeech.LANG_AVAILABLE) t.language = Locale.getDefault()
+        } catch (_: Exception) {
+        }
+        try {
+            t.setPitch(if (Prefs.deepVoice) 1.0f else Prefs.voicePitch)
             t.setSpeechRate(Prefs.voiceRate)
             val all = voiceChoices(t)
             val chosen = all.firstOrNull { it.name == Prefs.voiceName }
@@ -118,12 +126,12 @@ object Assistant {
     fun cycleVoice(): String {
         val t = tts ?: return "Voice not ready yet"
         val list = voiceChoices(t)
-        if (list.isEmpty()) return "No other voices are installed"
+        if (list.size < 2) return "Only one voice on this phone. I deepen it for you. Install Speech Services by Google for more."
         val cur = try { t.voice?.name } catch (e: Exception) { null }
         val next = list[(list.indexOfFirst { it.name == cur } + 1) % list.size]
         try {
             t.setVoice(next)
-            t.setPitch(Prefs.voicePitch)
+            t.setPitch(if (Prefs.deepVoice) 1.0f else Prefs.voicePitch)
         } catch (e: Exception) {
             return "That voice didn't work"
         }
@@ -132,7 +140,7 @@ object Assistant {
     }
 
     fun previewVoice() {
-        tts?.stop()
+        stopSpeech()
         say("Good day. I'm Jarvis, at your service.")
     }
 
@@ -141,7 +149,7 @@ object Assistant {
     /** Start listening for a command. */
     fun listen() {
         if (phase.value == Phase.LISTENING || phase.value == Phase.THINKING) return
-        tts?.stop()
+        stopSpeech()
         followUps = 0
         if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             respond("I need microphone permission. Please grant it in setup.", false)
@@ -162,7 +170,7 @@ object Assistant {
     /** Run a typed / tapped command (suggestion chips, skill list). */
     fun submit(text: String) {
         if (phase.value == Phase.LISTENING || phase.value == Phase.THINKING) return
-        tts?.stop()
+        stopSpeech()
         followUps = 0
         onMicNeeded?.invoke()
         handle(text)
@@ -177,7 +185,7 @@ object Assistant {
 
     fun cancel() {
         recognizer?.cancel()
-        tts?.stop()
+        stopSpeech()
         job?.cancel()
         finish()
     }
@@ -219,6 +227,7 @@ object Assistant {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Prefs.language)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, app.packageName)
         }
         partial.value = ""
@@ -264,10 +273,96 @@ object Assistant {
         phase.value = Phase.SPEAKING
         val t = tts
         if (t != null && ttsReady) {
-            t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+            val say = SpeechText.clean(text)
+            if (!(Prefs.deepVoice && speakDeep(t, say))) t.speak(say, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
         } else {
             main.postDelayed({ afterSpeech() }, 1200)
         }
+    }
+
+    // ---------------------------------------------------------------- deep voice
+    // The phone's voice is rendered to a sound file, then played back at a lower pitch without slowing down.
+    // This works with any speech engine, so a female-sounding voice comes out as a deep male one.
+
+    private var synthDone: ((Boolean) -> Unit)? = null
+    private var player: AudioTrack? = null
+    private val playEnd = Runnable {
+        try { player?.release() } catch (_: Exception) {}
+        player = null
+        afterSpeech()
+    }
+
+    private fun stopSpeech() {
+        tts?.stop()
+        synthDone = null
+        main.removeCallbacks(playEnd)
+        try { player?.stop(); player?.release() } catch (_: Exception) {}
+        player = null
+    }
+
+    private fun speakDeep(t: TextToSpeech, text: String): Boolean = try {
+        val f = java.io.File(app.cacheDir, "say.wav")
+        f.delete()
+        synthDone = { ok ->
+            synthDone = null
+            if (phase.value == Phase.SPEAKING) {
+                if (!(ok && playWav(f))) t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+            }
+        }
+        t.synthesizeToFile(text.take(3800), Bundle(), f, "jarvis_syn") == TextToSpeech.SUCCESS
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun playWav(f: java.io.File): Boolean = try {
+        val b = f.readBytes()
+        fun le16(o: Int) = (b[o].toInt() and 0xff) or ((b[o + 1].toInt() and 0xff) shl 8)
+        fun le32(o: Int) = le16(o) or (le16(o + 2) shl 16)
+        var pos = 12
+        var rate = 22050
+        var ch = 1
+        var bits = 16
+        var off = -1
+        var len = 0
+        while (pos + 8 <= b.size) {
+            val id = String(b, pos, 4, Charsets.US_ASCII)
+            var n = le32(pos + 4)
+            if (id == "fmt ") {
+                ch = le16(pos + 10); rate = le32(pos + 12); bits = le16(pos + 22)
+            } else if (id == "data") {
+                off = pos + 8
+                if (n <= 0 || off + n > b.size) n = b.size - off
+                len = n
+                break
+            }
+            pos += 8 + n + (n and 1)
+        }
+        if (off < 0 || bits != 16 || len <= 0 || rate <= 0) {
+            false
+        } else {
+            len -= len % (2 * ch)
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate)
+                        .setChannelMask(if (ch == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO).build()
+                )
+                .setBufferSizeInBytes(len)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            track.write(b, off, len)
+            track.playbackParams = PlaybackParams().setSpeed(1f).setPitch(Prefs.voicePitch.coerceIn(0.4f, 1.2f))
+            player = track
+            track.play()
+            val ms = len / (2 * ch) * 1000L / rate
+            main.postDelayed(playEnd, ms + 300L)
+            true
+        }
+    } catch (e: Exception) {
+        false
     }
 
     private fun afterSpeech() {

@@ -37,6 +37,24 @@ object WhatsAppSender {
     fun armed(): Boolean = System.currentTimeMillis() < until
 }
 
+object AppPerms {
+    /** Every runtime permission Jarvis uses. */
+    val all: Array<String> = buildList {
+        add(android.Manifest.permission.RECORD_AUDIO)
+        add(android.Manifest.permission.READ_CONTACTS)
+        add(android.Manifest.permission.CALL_PHONE)
+        add(android.Manifest.permission.READ_CALENDAR)
+        add(android.Manifest.permission.WRITE_CALENDAR)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            add(android.Manifest.permission.POST_NOTIFICATIONS)
+            add(android.Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 29) add(android.Manifest.permission.ACCESS_MEDIA_LOCATION)
+    }.toTypedArray()
+}
+
 object A11y {
     /** Whether the user has switched Jarvis on in Android's accessibility settings. */
     fun enabled(ctx: Context): Boolean = try {

@@ -30,8 +30,15 @@ class MainActivity : ComponentActivity() {
         Updater.autoCheck(applicationContext)
     }
 
+    override fun onPause() {
+        super.onPause()
+        com.jarvis.assistant.system.ListenOrb.foreground = false
+    }
+
     override fun onResume() {
         super.onResume()
+        com.jarvis.assistant.system.ListenOrb.foreground = true
+        com.jarvis.assistant.system.ListenOrb.hide()
         // If the app was closed or restarted mid-session, pin the screen again.
         if (FocusLock.active()) runCatching { startLockTask() }
     }
@@ -44,6 +51,9 @@ class MainActivity : ComponentActivity() {
 
     /** Power-button / headset / "assist" gesture launches go straight to listening. */
     private fun handle(i: Intent?) {
+        if (i?.getBooleanExtra("askPerms", false) == true) {
+            androidx.core.app.ActivityCompat.requestPermissions(this, com.jarvis.assistant.core.AppPerms.all, 77)
+        }
         val a = i?.action
         val wantsListen = a == Intent.ACTION_ASSIST ||
             a == Intent.ACTION_VOICE_COMMAND ||

@@ -50,7 +50,7 @@ fun JarvisOrb(phase: Phase, level: Float, modifier: Modifier = Modifier) {
     val core by animateColorAsState(
         when (phase) {
             Phase.IDLE -> Cyan
-            Phase.LISTENING -> Color(0xFF5EEAD4)
+            Phase.LISTENING -> Color(0xFFFF9F1C)
             Phase.THINKING -> Violet
             Phase.SPEAKING -> Blue
         },

@@ -58,6 +58,13 @@ object Actions {
         "notifications" -> notifications(ctx)
         "briefing" -> briefing(ctx)
         "phone_do" -> withContext(Dispatchers.Default) { Outcome(PhoneAgent.run(ctx, p.target.ifBlank { p.message })) }
+        "toggle" -> toggle(ctx, p)
+        "global" -> globalAction(ctx, p)
+        "screen_read" -> withContext(Dispatchers.IO) { screenRead() }
+        "email" -> email(ctx, p)
+        "remember" -> { Prefs.addFact(p.message.ifBlank { p.target }); Outcome("Noted. I'll remember that.") }
+        "forget_all" -> { Prefs.clearFacts(); Outcome("Done. I've forgotten everything you asked me to remember.") }
+        "memory_read" -> info(Prefs.facts().let { if (it.isEmpty()) "You haven't asked me to remember anything yet." else "I remember: " + it.joinToString(". ") + "." })
         "shop" -> shop(ctx, p)
         "install_app" -> installApp(ctx, p)
         "calendar" -> calendar(ctx, p)
@@ -259,6 +266,78 @@ object Actions {
         return done(launch(ctx, i), p.reply.ifBlank { "Opening $label." }, "I couldn't open $label.")
     }
 
+    /** Opens Jarvis so Android can ask for the permissions that are still missing. */
+    private fun needPerm(ctx: Context, say: String): Outcome {
+        launch(ctx, Intent(ctx, com.jarvis.assistant.MainActivity::class.java).putExtra("askPerms", true))
+        return Outcome(say)
+    }
+
+    private suspend fun toggle(ctx: Context, p: Plan): Outcome {
+        val thing = p.target.trim()
+        val state = if (p.value.equals("off", true)) "off" else "on"
+        if (com.jarvis.assistant.system.JarvisAccessibilityService.instance == null) {
+            val v = when {
+                "wi" in thing -> "wifi"
+                "blue" in thing -> "bluetooth"
+                "air" in thing || "flight" in thing -> "airplane"
+                "hotspot" in thing -> "hotspot"
+                "location" in thing || "gps" in thing -> "location"
+                else -> ""
+            }
+            val r = settings(ctx, p.copy(value = v))
+            return Outcome("Android won't let apps flip $thing by themselves. Switch Accessibility on for Jarvis in setup and I'll do it for you. " + r.reply)
+        }
+        com.jarvis.assistant.system.JarvisAccessibilityService.instance?.quickToggle(thing, state == "on")?.let { return Outcome(it) }
+        val goal = "Turn $thing $state. Pull down the quick settings panel (use the quick_settings action), tap the $thing tile only if it is not already $state, " +
+            "and check its state afterwards. If the tile isn't there, open Settings and find it. Finish with done and say what it is now."
+        return Outcome(PhoneAgent.run(ctx, goal))
+    }
+
+    private fun globalAction(ctx: Context, p: Plan): Outcome {
+        val svc = com.jarvis.assistant.system.JarvisAccessibilityService.instance
+            ?: return Outcome("I need Accessibility switched on in setup for that.")
+        return if (svc.global(p.value)) Outcome(when (p.value) {
+            "screenshot" -> "Screenshot taken."
+            "lock" -> "Locking."
+            else -> ""
+        }) else Outcome("Android didn't let me do that one.")
+    }
+
+    private suspend fun screenRead(): Outcome {
+        val svc = com.jarvis.assistant.system.JarvisAccessibilityService.instance
+            ?: return Outcome("I need Accessibility switched on in setup to see your screen.")
+        val (pkg, items) = svc.items()
+        if (items.isEmpty()) return Outcome("I can't read anything on this screen.")
+        val text = items.joinToString("\n") { it.label }.take(4000)
+        return info(Brain.screenSummary(pkg, text))
+    }
+
+    private fun email(ctx: Context, p: Plan): Outcome {
+        val who = p.target.trim()
+        if (who.isEmpty()) return ask("Who should I email?", p)
+        var address = who.takeIf { it.contains("@") }
+        if (address == null && granted(ctx, Manifest.permission.READ_CONTACTS)) {
+            var best = 0
+            try {
+                val q = Match.norm(who)
+                ctx.contentResolver.query(
+                    android.provider.ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+                    arrayOf(android.provider.ContactsContract.CommonDataKinds.Email.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Email.ADDRESS),
+                    null, null, null
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val s = Match.score(Match.norm(c.getString(0).orEmpty()), q)
+                        if (s > best) { best = s; address = c.getString(1) }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        val i = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + (address ?: "")))
+            .putExtra(Intent.EXTRA_TEXT, p.message)
+        return done(launch(ctx, i), if (address != null) "Email to $who is ready. Just hit send." else "Email is ready. I couldn't find an address for $who, so add it.", "I couldn't open your email app.")
+    }
+
     private fun shop(ctx: Context, p: Plan): Outcome {
         val q = p.target.trim()
         if (q.isEmpty()) return ask("What should I look for?", p)
@@ -343,13 +422,17 @@ object Actions {
             .putExtra(android.provider.CalendarContract.Events.TITLE, title)
             .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
             .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, end)
-        val tip = if (calPerm(ctx)) "" else " Allow calendar access in setup and I'll save it myself next time."
+        if (!calPerm(ctx)) {
+            needPerm(ctx, "")
+            return Outcome("I need calendar access to save that myself. Tap Allow on the screen that just opened, then ask me again.")
+        }
+        val tip = ""
         return done(launch(ctx, i), "Your calendar is open with \"$title\" for $whenText. Tap Save.$tip", "I couldn't open your calendar.")
     }
 
     /** Reads the day's events aloud. value = today | tomorrow. */
     private fun agenda(ctx: Context, p: Plan): Outcome {
-        if (!calPerm(ctx)) return Outcome("I need calendar permission to read your schedule. Please allow it in setup.")
+        if (!calPerm(ctx)) return needPerm(ctx, "I need calendar access first. Tap Allow on the screen that just opened, then ask me again.")
         val c = java.util.Calendar.getInstance()
         if (p.value.equals("tomorrow", true)) c.add(java.util.Calendar.DAY_OF_YEAR, 1)
         c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0)

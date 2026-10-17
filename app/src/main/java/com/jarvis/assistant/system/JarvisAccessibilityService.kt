@@ -35,6 +35,84 @@ class JarvisAccessibilityService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
+    // ------------------------------------------------------------------ quick-settings switches, no AI needed
+
+    private fun keysFor(thing: String): List<String> {
+        val t = thing.lowercase()
+        return when {
+            "wi" in t -> listOf("wi-fi", "wifi")
+            "blue" in t -> listOf("bluetooth")
+            "air" in t || "flight" in t -> listOf("airplane", "flight mode")
+            "hotspot" in t -> listOf("hotspot")
+            "data" in t -> listOf("mobile data", "data")
+            "location" in t || "gps" in t -> listOf("location")
+            "disturb" in t || "dnd" in t -> listOf("do not disturb", "dnd")
+            "battery" in t || "power" in t -> listOf("power saving", "battery saver")
+            "rotate" in t -> listOf("auto rotate", "auto-rotate")
+            "nfc" in t -> listOf("nfc")
+            "dark" in t -> listOf("dark mode")
+            "night" in t || "eye" in t -> listOf("eye comfort", "night light", "blue light")
+            else -> listOf(t)
+        }
+    }
+
+    private fun tileState(n: AccessibilityNodeInfo): Boolean? {
+        var c: AccessibilityNodeInfo? = n
+        var d = 0
+        while (c != null && d < 4) {
+            if (c.isCheckable || c.isChecked) {
+                return c.isChecked
+            }
+            c = c.parent
+            d++
+        }
+        val sd = if (Build.VERSION.SDK_INT >= 30) n.stateDescription?.toString().orEmpty() else ""
+        val text = (sd + " " + n.contentDescription?.toString().orEmpty() + " " + n.text?.toString().orEmpty()).lowercase()
+        return when {
+            Regex("\\boff\\b").containsMatchIn(text) -> false
+            Regex("\\bon\\b").containsMatchIn(text) -> true
+            else -> null
+        }
+    }
+
+    /** Opens the quick-settings panel, taps the tile only if needed, and closes it. Returns what to say, or null if the tile wasn't found. */
+    suspend fun quickToggle(thing: String, wantOn: Boolean): String? {
+        val keys = keysFor(thing)
+        performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+        var said: String? = null
+        for (attempt in 0 until 4) {
+            kotlinx.coroutines.delay(if (attempt == 0) 900L else 600L)
+            val (_, list) = items()
+            val tile = list.firstOrNull { it.label.lowercase().let { l -> keys.any { k -> k in l } } }
+                ?: list.firstOrNull { it.node.contentDescription?.toString()?.lowercase()?.let { l -> keys.any { k -> k in l } } == true }
+            if (tile != null) {
+                val now = tileState(tile.node)
+                val name = thing.trim()
+                if (now == wantOn) {
+                    said = "$name is already ${if (wantOn) "on" else "off"}."
+                } else {
+                    click(tile)
+                    kotlinx.coroutines.delay(700L)
+                    val after = items().second.firstOrNull { it.label.lowercase().let { l -> keys.any { k -> k in l } } }?.let { tileState(it.node) }
+                    said = if (after == null || after == wantOn) "Done. $name is ${if (wantOn) "on" else "off"}." else "I tapped $name but it didn't change. It may need your permission."
+                }
+                break
+            }
+            if (attempt == 1) {
+                // some phones show the first page only: swipe the panel sideways to find the tile
+                val path = android.graphics.Path().apply { moveTo(900f, 600f); lineTo(150f, 600f) }
+                dispatchGesture(
+                    android.accessibilityservice.GestureDescription.Builder()
+                        .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 250)).build(), null, null
+                )
+            }
+        }
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        kotlinx.coroutines.delay(250L)
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        return said
+    }
+
     // ------------------------------------------------------------------ screen control (used by the phone agent)
 
     class Item(val node: AccessibilityNodeInfo, val label: String, val line: String)
@@ -109,6 +187,8 @@ class JarvisAccessibilityService : AccessibilityService() {
         "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
         "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
         "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+        "screenshot" -> Build.VERSION.SDK_INT >= 28 && performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+        "lock" -> Build.VERSION.SDK_INT >= 28 && performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
         else -> false
     }
 

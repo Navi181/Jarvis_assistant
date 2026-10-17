@@ -42,8 +42,13 @@ object Prefs {
 
     /** Lower = deeper. 1.0 is the voice's natural pitch. */
     var voicePitch: Float
-        get() = sp.getFloat("voicePitch2", 0.6f)
-        set(v) = sp.edit().putFloat("voicePitch2", v).apply()
+        get() = sp.getFloat("voicePitch3", 0.66f)
+        set(v) = sp.edit().putFloat("voicePitch3", v).apply()
+
+    /** Plays the voice back deeper so it sounds like a man, whatever the phone's speech engine offers. */
+    var deepVoice: Boolean
+        get() = sp.getBoolean("deepVoice", true)
+        set(v) = sp.edit().putBoolean("deepVoice", v).apply()
 
     var voiceRate: Float
         get() = sp.getFloat("voiceRate2", 0.92f)
@@ -89,6 +94,32 @@ object Prefs {
     var autoUpdate: Boolean
         get() = sp.getBoolean("autoUpdate", true)
         set(v) = sp.edit().putBoolean("autoUpdate", v).apply()
+
+    // ---- personalisation
+    /** witty | formal | friendly | sarcastic */
+    var personality: String
+        get() = str("personality", "witty")
+        set(v) = put("personality", v)
+
+    /** short | normal | detailed */
+    var answerLen: String
+        get() = str("answerLen", "short")
+        set(v) = put("answerLen", v)
+
+    /** Language for listening and speaking, e.g. en-IN, hi-IN. */
+    var language: String
+        get() = str("language", "en-IN")
+        set(v) = put("language", v)
+
+    /** Small orb on screen while Jarvis is listening and you are in another app. */
+    var listenOrb: Boolean
+        get() = sp.getBoolean("listenOrb", true)
+        set(v) = sp.edit().putBoolean("listenOrb", v).apply()
+
+    /** Things you told Jarvis to remember. */
+    fun facts(): List<String> = str("facts").split('\u001F').filter { it.isNotBlank() }
+    fun addFact(f: String) = put("facts", (facts() + f.trim()).takeLast(60).joinToString("\u001F"))
+    fun clearFacts() = put("facts", "")
 
     // ---- study
     var studyLevel: String

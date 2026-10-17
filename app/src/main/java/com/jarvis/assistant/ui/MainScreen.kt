@@ -33,6 +33,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.padding
@@ -103,6 +106,8 @@ fun MainScreen(onSettings: () -> Unit) {
     val msgs by Assistant.messages.collectAsState()
     var handsFree by remember { mutableStateOf(Prefs.handsFree) }
     var typed by remember { mutableStateOf("") }
+    // While the keyboard is up, the orb shrinks and everything else steps aside so you can see what you type.
+    val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
     fun sendTyped() {
         val t = typed.trim()
@@ -170,14 +175,18 @@ fun MainScreen(onSettings: () -> Unit) {
             }
 
             // orb
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val s = if (maxWidth < maxHeight) maxWidth else maxHeight
-                JarvisOrb(phase, level, Modifier.size(s))
+            if (imeOpen) {
+                JarvisOrb(phase, level, Modifier.padding(top = 4.dp).size(84.dp))
+            } else {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    val s = if (maxWidth < maxHeight) maxWidth else maxHeight
+                    JarvisOrb(phase, level, Modifier.size(s))
+                }
             }
 
             // status line
             val status = when (phase) {
-                Phase.IDLE -> if (handsFree) "Say “Jarvis” or tap the mic" else "Tap the mic to talk"
+                Phase.IDLE -> if (imeOpen) "Type a command" else if (handsFree) "Say “Jarvis” or tap the mic" else "Tap the mic to talk"
                 Phase.LISTENING -> partial.ifBlank { "Listening…" }
                 Phase.THINKING -> "Thinking…"
                 Phase.SPEAKING -> "Speaking…"
@@ -199,15 +208,15 @@ fun MainScreen(onSettings: () -> Unit) {
 
             // conversation
             Column(
-                Modifier.fillMaxWidth().heightIn(min = 96.dp).padding(top = 6.dp),
+                (if (imeOpen) Modifier.weight(1f) else Modifier.heightIn(min = 96.dp)).fillMaxWidth().padding(top = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
             ) {
-                msgs.takeLast(2).forEach { m -> key(m.id) { Bubble(m) } }
+                msgs.takeLast(if (imeOpen) 3 else 2).forEach { m -> key(m.id) { Bubble(m) } }
             }
 
             // suggestions
             AnimatedVisibility(
-                visible = phase == Phase.IDLE && msgs.isEmpty(),
+                visible = phase == Phase.IDLE && msgs.isEmpty() && !imeOpen,
                 enter = fadeIn() + slideInVertically { it / 2 },
                 exit = fadeOut()
             ) {
@@ -222,14 +231,15 @@ fun MainScreen(onSettings: () -> Unit) {
             }
 
             // keyboard
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = if (imeOpen) 10.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = typed,
                     onValueChange = { typed = it },
-                    placeholder = { Text("Type a command…", color = InkDim) },
+                    placeholder = { Text("Type a command…", color = InkDim, fontSize = 16.sp) },
+                    textStyle = TextStyle(color = Ink, fontSize = 17.sp, lineHeight = 24.sp, letterSpacing = 0.sp),
                     singleLine = true,
                     shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).heightIn(min = 58.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { sendTyped() }),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -237,6 +247,8 @@ fun MainScreen(onSettings: () -> Unit) {
                         unfocusedBorderColor = Outline,
                         focusedTextColor = Ink,
                         unfocusedTextColor = Ink,
+                        focusedContainerColor = Panel,
+                        unfocusedContainerColor = Panel,
                         cursorColor = Cyan
                     )
                 )
@@ -246,12 +258,12 @@ fun MainScreen(onSettings: () -> Unit) {
             }
 
             // mic
-            Box(Modifier.padding(top = 12.dp), contentAlignment = Alignment.Center) {
+            if (!imeOpen) Box(Modifier.padding(top = 12.dp), contentAlignment = Alignment.Center) {
                 MicButton(phase, level, ::tapMic)
             }
 
             // hands-free toggle
-            Row(
+            if (!imeOpen) Row(
                 Modifier
                     .padding(top = 10.dp, bottom = 14.dp)
                     .clickable { setHandsFree(!handsFree) },
@@ -276,10 +288,15 @@ private fun Bubble(m: Msg) {
         visibleState = state,
         enter = fadeIn(tween(350)) + slideInVertically(tween(350)) { it / 2 } + scaleIn(tween(350), initialScale = 0.92f)
     ) {
-        Row(
+        Column(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = if (m.fromUser) Arrangement.End else Arrangement.Start
+            horizontalAlignment = if (m.fromUser) Alignment.End else Alignment.Start
         ) {
+            Text(
+                if (m.fromUser) Prefs.callMe.replaceFirstChar { it.uppercase() } else "Jarvis",
+                color = InkDim, fontFamily = Fonts.mono, fontSize = 10.sp, letterSpacing = 1.sp,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = if (m.fromUser) Cyan.copy(alpha = 0.14f) else Panel,

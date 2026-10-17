@@ -32,6 +32,14 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <package android:name="com.google.android.tts" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.amazon.mp3" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.android.vending" />
     </queries>
 
     <application
@@ -116,6 +124,20 @@
             <intent-filter>
                 <action android:name="android.service.voice.VoiceInteractionService" />
             </intent-filter>
+        </service>
+        <!-- Android only keeps an assistant selected if it also provides a speech recogniser -->
+        <service
+            android:name=".system.JarvisRecognitionService"
+            android:exported="true"
+            android:label="Jarvis"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
         </service>
         <service
             android:name=".system.JarvisSessionService"

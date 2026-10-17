@@ -16,11 +16,44 @@ object Brain {
         LocalParser.parse(text) ?: llmPlan(text, history)
     }
 
+    private fun personalityLine() = when (Prefs.personality) {
+        "formal" -> "You are formal, precise and respectful, like a butler."
+        "friendly" -> "You are warm, friendly and encouraging."
+        "sarcastic" -> "You are dry and sarcastic in a light, affectionate way, but always helpful."
+        else -> "You are calm, witty and quietly confident, like Tony Stark's JARVIS."
+    }
+
+    private fun lengthLine() = when (Prefs.answerLen) {
+        "detailed" -> "up to 6 spoken sentences when the question deserves it"
+        "normal" -> "at most 4 short sentences"
+        else -> "at most 2 short sentences"
+    }
+
+    private fun langName() = when (Prefs.language.substringBefore('-')) {
+        "hi" -> "Hindi"
+        "kn" -> "Kannada"
+        "ta" -> "Tamil"
+        "te" -> "Telugu"
+        "ml" -> "Malayalam"
+        "mr" -> "Marathi"
+        "bn" -> "Bengali"
+        "es" -> "Spanish"
+        "fr" -> "French"
+        "de" -> "German"
+        else -> "English"
+    }
+
+    private fun factsBlock(): String {
+        val f = Prefs.facts()
+        return if (f.isEmpty()) "" else "Things the user told you to remember: " + f.joinToString("; ") + "."
+    }
+
     private fun now(): String = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT).format(Date())
 
     private fun systemPrompt(): String = """
-You are JARVIS, a calm, witty, highly capable voice assistant living on the user's Android phone. Address the user as "${Prefs.callMe}" occasionally, not every time.
-Your replies are spoken aloud: at most 2 short sentences, plain text, no markdown, no emojis, no lists.
+You are JARVIS, a highly capable voice assistant living on the user's Android phone. ${personalityLine()} Address the user as "${Prefs.callMe}" occasionally, not every time.
+Your replies are spoken aloud: ${lengthLine()}, plain text, no markdown, no emojis, no lists. Reply in ${langName()} unless the user speaks another language.
+${factsBlock()}
 Respond with ONLY a JSON object with exactly these keys: action, target, message, hour, minute, seconds, value, reply.
 action must be one of:
 - call (target = contact name or phone number)
@@ -41,10 +74,13 @@ action must be one of:
 - note_add (message = the note)
 - note_read
 - web_answer (target = the question; use for anything needing live or recent facts: sports results, news, prices, "who is the current ...")
+- toggle (target = wifi | bluetooth | hotspot | etc, value = on | off)
 - phone_do (target = the whole task in plain words; use for ANY job on the phone that no other action covers, in any app: toggling a setting, ordering, replying inside an app, checking something in an app. You will look at the screen and tap through it)
 - shop (target = item, value = amazon | flipkart; opens the store search)
 - install_app (target = app name; opens the Play Store)
 - calendar (message = event title, hour and minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length in seconds; opens the calendar prefilled)
+- remember (message = the fact to remember about the user)
+- screen_read (target = what the user wants to know about the current screen, or "")
 - agenda (value = today | tomorrow; reads the calendar aloud)
 - tutor (value = explain | quiz | flashcards | summary; target = topic)
 - photo (target = the user's own words describing which photo to open, e.g. "sunset in goa last week")
@@ -123,8 +159,19 @@ Current date and time: ${now()}
         question, true
     )
 
+    fun screenSummary(pkg: String, text: String): String = text(
+        "You are JARVIS. The user asked what is on their phone screen. Describe it in at most 3 short spoken sentences. Plain text, no markdown.",
+        "App: $pkg\nVisible text:\n$text", false
+    )
+
     fun tutor(kind: String, topic: String, spoken: Boolean): String {
-        val style = if (spoken) "Reply in at most 3 short spoken sentences." else "Be clear and well structured but concise, under 220 words."
+        val chapter = Regex("(?i)\\b(chapter|unit|lesson|topic|syllabus|textbook|ncert|icse|cbse|class \\d+|grade \\d+)\\b").containsMatchIn(topic)
+        val style = when {
+            spoken && chapter -> "Reply in at most 6 short spoken sentences, covering the main ideas in order."
+            spoken -> "Reply in at most 3 short spoken sentences."
+            chapter -> "Teach it properly: start with a 2 line overview, then the key ideas as short numbered points with one simple example each, then 3 quick revision questions. Under 450 words."
+            else -> "Be clear and well structured but concise, under 220 words."
+        }
         val task = when (kind) {
             "quiz" -> if (spoken) "Ask me ONE quiz question about" else "Write a 5 question multiple-choice quiz (options A to D, answers at the end) about"
             "flashcards" -> "Write 6 flashcards (lines starting Q: and A:) about"
@@ -133,10 +180,17 @@ Current date and time: ${now()}
         }
         val subject = topic.ifBlank { "a topic of your choice from my studies" }
         return text(
-            "You are a patient, encouraging tutor for a ${Prefs.studyLevel} student. Plain text only: no markdown, no asterisks, no links. $style",
-            "$task: $subject", false
+            "You are a patient, encouraging tutor for a ${Prefs.studyLevel} student, expert in school and college syllabuses (NCERT, CBSE, ICSE, state boards, IB, university). " +
+                "When a chapter, book or exam is named, look it up and teach what that syllabus actually covers. Plain text only: no markdown, no asterisks, no links. $style",
+            "$task: $subject", true
         )
     }
+
+    /** Answers a question about whatever is on the phone's screen right now. */
+    fun describeScreen(screen: String, ask: String): String = text(
+        "You are JARVIS reading the user's phone screen. The screen content is a list of items. Answer the user's request about it in at most 4 short spoken sentences, plain text.",
+        "Request: ${ask.ifBlank { "Tell me what is on my screen and summarise it." }}\nScreen:\n$screen", false
+    )
 
     private fun text(system: String, user: String, search: Boolean): String {
         if (!Prefs.hasAnyKey) return (if (search) clean(Fallback.answer(user).orEmpty()) else "").ifBlank { "I need a free Gemini or Groq key for that. You can add it in setup." }

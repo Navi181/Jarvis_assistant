@@ -82,6 +82,12 @@ object LocalParser {
         Regex("^(?:summarize|summarise|summary of)\\s+(.+)$").find(t)?.let { return Plan("tutor", target = it.groupValues[1].trim(), value = "summary") }
         Regex("^(?:explain|teach me|help me understand)\\s+(.+)$").find(t)?.let { return Plan("tutor", target = it.groupValues[1].trim(), value = "explain") }
 
+        // ---- memory and screen
+        if (Regex("^(?:forget everything(?: you know about me)?|clear (?:your )?memory|forget what i told you)$").matches(t)) return Plan("forget_all")
+        if (Regex("^(?:what do you (?:remember|know) about me|what(?:'s| is) in your memory|what did i tell you to remember)$").matches(t)) return Plan("memory_read")
+        Regex("^(?:remember|keep in mind|don't forget|dont forget)(?: that)?\\s+(?!to\\b)(.+)$").find(t)?.let { return Plan("remember", message = it.groupValues[1].trim()) }
+        if (Regex("^(?:what(?:'s| is) on (?:my|the) screen|read (?:my|the|this) screen|(?:summari[sz]e|explain) (?:this|my|the) (?:screen|page)|what am i looking at)\\??$").matches(t)) return Plan("screen_read")
+
         // ---- shopping, installing apps, calendar
         Regex("^(?:search|find|look (?:for|up)|show me|buy|order|check)\\s+(.+?)\\s+(?:on|in|at|from)\\s+(amazon|flipkart)(?:\\s+.*)?$").find(t)?.let {
             return Plan("shop", target = it.groupValues[1].replace(Regex("^(?:the )?(?:price of|prices? for)\\s+"), "").trim(), value = it.groupValues[2])
@@ -90,6 +96,9 @@ object LocalParser {
             if (!it.groupValues[1].contains("update")) return Plan("install_app", target = it.groupValues[1].trim())
         }
 
+        if (t.contains("calendar") && Regex("^(?:please )?(?:add|put|block|block out|schedule|create|set up|book|make|mark)\\b").containsMatchIn(t)) {
+            return calendarPlan(t, now)
+        }
         Regex("^(?:what(?:'s| is)?(?: is)? on my (?:calendar|schedule)|what(?:'s| is) my (?:schedule|agenda)|do i have any (?:meetings?|events?|plans)|my (?:schedule|agenda|calendar))\\s*(today|tomorrow)?$").find(t)
             ?.let { return Plan("agenda", value = it.groupValues[1].ifBlank { "today" }) }
         // ---- live facts: answered directly from the web, never as links
@@ -112,6 +121,30 @@ object LocalParser {
         // ---- maths / conversions
         calc(t)?.let { return it }
         convert(t)?.let { return it }
+
+        // ---- on/off switches (done for you through the screen, not just opened)
+        val sw = "(wi-?fi|bluetooth|airplane mode|flight mode|hotspot|mobile data|data|location|gps|do not disturb|dnd|battery saver|power saving|auto rotate|nfc|dark mode|night light|eye comfort)"
+        Regex("^(?:please )?(?:turn|switch|put|set)\\s+(on|off)\\s+(?:the |my )?$sw$").find(t)?.let {
+            return Plan("toggle", target = it.groupValues[2], value = it.groupValues[1])
+        }
+        Regex("^(?:please )?(?:turn|switch)\\s+(?:the |my )?$sw\\s+(on|off)$").find(t)?.let {
+            return Plan("toggle", target = it.groupValues[1], value = it.groupValues[2])
+        }
+        Regex("^(?:please )?(enable|disable|activate|deactivate)\\s+(?:the |my )?$sw$").find(t)?.let {
+            return Plan("toggle", target = it.groupValues[2], value = if (it.groupValues[1].startsWith("en") || it.groupValues[1].startsWith("act")) "on" else "off")
+        }
+
+        // ---- phone controls and screen
+        if (Regex("^(?:take (?:a )?screenshot|screenshot|capture (?:the )?screen)$").matches(t)) return Plan("global", value = "screenshot")
+        if (Regex("^(?:lock (?:the |my )?(?:phone|screen)|lock it)$").matches(t)) return Plan("global", value = "lock")
+        if (Regex("^go back$").matches(t)) return Plan("global", value = "back")
+        if (Regex("^go (?:to )?(?:the )?home(?: screen)?$").matches(t)) return Plan("global", value = "home")
+        if (Regex("^(?:show|open) (?:my )?(?:recent apps|recents)$").matches(t)) return Plan("global", value = "recents")
+        if (Regex("^(?:pull down|show|open) (?:the )?quick settings$").matches(t)) return Plan("global", value = "quick_settings")
+        if (Regex("^(?:what(?:'s| is) on (?:my|the) screen|read (?:my|the|this) screen|(?:summari[sz]e|explain) (?:my |the |this )?screen)$").matches(t)) return Plan("screen_read")
+        Regex("^(?:email|send (?:an )?email to|mail)\\s+(.+?)(?:\\s+(?:saying that|saying|that says|about|and say|to say)\\s+(.+))?$").find(t)?.let {
+            return Plan("email", target = it.groupValues[1].trim(), message = it.groupValues[2].trim())
+        }
 
         // ---- quick settings, volume, info
         Regex("\\b(wi-?fi|bluetooth|airplane mode|hotspot)\\b").find(t)?.let { m ->
@@ -207,6 +240,39 @@ object LocalParser {
             else -> return null
         }
         return Plan("media", value = v)
+    }
+
+    private fun calendarPlan(t0: String, now: Int): Plan {
+        var t = Num.digitize(t0)
+        var value = "today"
+        if (Regex("\\btomorrow\\b").containsMatchIn(t)) value = "tomorrow"
+        Regex("\\b(?:on |next )?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b").find(t)?.let { m ->
+            val dow = java.time.DayOfWeek.valueOf(m.groupValues[1].uppercase())
+            val d = if (m.value.startsWith("next")) java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.next(dow))
+            else java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.nextOrSame(dow))
+            value = d.toString()
+        }
+        var seconds = 0
+        Regex("\\bfor\\s+((?:\\d+|an?|half an?)\\s*(?:hours?|hrs?|minutes?|mins?))\\b").find(t)?.let { m ->
+            seconds = parseDuration(m.groupValues[1]) ?: 0
+            t = t.replace(m.value, " ")
+        }
+        val clock = parseClock(t, now)
+        var title = Regex("(?:called|named|titled)\\s+(.+?)(?:\\s+(?:on|at|tomorrow|today|in|to)\\b.*)?$").find(t)?.groupValues?.get(1)
+            ?: Regex("\\bfor\\s+(?!\\d)(.+?)(?:\\s+(?:on|in|to|at|tomorrow|today)\\b.*)?$").find(t)?.groupValues?.get(1)
+            ?: ""
+        title = title.replace(Regex("\\b(my|the|a|an)\\s+calendar\\b"), "").trim()
+        if (title.isBlank()) {
+            title = t.replace(Regex("\\b(please|add|put|block out|block|schedule|create|set up|book|make|mark|an?|the|my|event|meeting|slot|time|on|in|to|into|calendar|today|tomorrow|at|for)\\b"), " ")
+                .replace(Regex("\\b\\d{1,2}(:\\d{2})?\\s*(am|pm)?\\b"), " ")
+                .replace(Regex("\\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|next|called|named)\\b"), " ")
+                .replace(Regex("\\s+"), " ").trim()
+        }
+        title = title.replaceFirstChar { it.uppercase() }.ifBlank { "Blocked time" }
+        return Plan(
+            "calendar", message = title, value = value, seconds = seconds,
+            hour = clock?.first ?: -1, minute = clock?.second ?: 0
+        )
     }
 
     private fun smsPlan(rest0: String, whatsapp0: Boolean): Plan {
