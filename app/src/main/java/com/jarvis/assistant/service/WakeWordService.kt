@@ -62,9 +62,20 @@ class WakeWordService : Service() {
     private var vosk: SpeechService? = null
     private var voskModel: Model? = null
     private var lastWake = 0L
+    private var google: android.speech.SpeechRecognizer? = null
+    private var googleOn = false
 
     // Heard "Jarvis", or a close mishearing of it.
-    private val wakeWord = Regex("\\b(jarvis|jarvas|jervis|jarvus|garvis|jar vis|jar viss)\\b")
+    // The small offline model doesn't know the word "Jarvis", so it writes down what it sounds like.
+    private val wakeWord = Regex("\\b(jarvis|jarvas|jervis|jarvus|garvis|harvis|charvis|darvis|travis|jarves|jar vis+|jar viss?|jar bus|jar bis|jar vice|java is)\\b")
+
+    private fun isWake(text: String): Boolean {
+        val t = text.lowercase().trim()
+        if (t.isBlank()) return false
+        if (wakeWord.containsMatchIn(t)) return true
+        val words = t.split(Regex("\\s+"))
+        return words.size <= 2 && ("service" in words || "jarvis's" in words)
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -86,14 +97,74 @@ class WakeWordService : Service() {
         }
         running = true
         Assistant.onMicNeeded = { handler.post { stopWake() } }
-        Assistant.onMicFree = { handler.postDelayed({ if (running && porcupine == null && vosk == null) beginWake() }, 500) }
+        Assistant.onMicFree = { handler.postDelayed({ if (running && porcupine == null && vosk == null && !googleOn) beginWake() }, 500) }
         return START_STICKY
     }
 
     private fun beginWake(): Boolean {
         stopWake()
         // A Picovoice key, if you added one, is a little more accurate. Otherwise the free built-in model is used.
-        return if (Prefs.picoKey.isNotBlank()) beginPorcupine() else beginVosk()
+        if (Prefs.picoKey.isNotBlank()) return beginPorcupine()
+        // The free offline model if it's been downloaded, otherwise Google's own recogniser (no download needed).
+        if (WakeModel.ready(applicationContext) && beginVosk()) return true
+        return beginGoogle()
+    }
+
+    private fun beginGoogle(): Boolean {
+        if (!android.speech.SpeechRecognizer.isRecognitionAvailable(applicationContext)) {
+            warn("Speech recognition isn't available. Install or enable the Google app.")
+            return false
+        }
+        googleOn = true
+        handler.post { googleListen() }
+        return true
+    }
+
+    private val googleListener = object : android.speech.RecognitionListener {
+        private fun check(b: android.os.Bundle?) {
+            val list = b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION) ?: return
+            val now = System.currentTimeMillis()
+            if (list.any { isWake(it) } && now - lastWake > 3000) {
+                lastWake = now
+                onWake()
+            }
+        }
+
+        override fun onPartialResults(partialResults: android.os.Bundle?) = check(partialResults)
+        override fun onResults(results: android.os.Bundle?) {
+            check(results)
+            again()
+        }
+
+        override fun onError(error: Int) = again()
+        override fun onReadyForSpeech(params: android.os.Bundle?) {}
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {}
+        override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+
+        private fun again() {
+            if (googleOn) handler.postDelayed({ googleListen() }, 400)
+        }
+    }
+
+    private fun googleListen() {
+        if (!googleOn || !running) return
+        try {
+            google?.destroy()
+            val r = android.speech.SpeechRecognizer.createSpeechRecognizer(applicationContext)
+            r.setRecognitionListener(googleListener)
+            r.startListening(
+                Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            )
+            google = r
+        } catch (e: Exception) {
+            handler.postDelayed({ googleListen() }, 1500)
+        }
     }
 
     private fun beginPorcupine(): Boolean = try {
@@ -136,7 +207,7 @@ class WakeWordService : Service() {
                 return
             }
             val now = System.currentTimeMillis()
-            if (wakeWord.containsMatchIn(text) && now - lastWake > 3000) {
+            if (isWake(text) && now - lastWake > 3000) {
                 lastWake = now
                 onWake()
             }
@@ -162,6 +233,13 @@ class WakeWordService : Service() {
         } catch (_: Exception) {
         }
         vosk = null
+        googleOn = false
+        try {
+            google?.cancel()
+            google?.destroy()
+        } catch (_: Exception) {
+        }
+        google = null
     }
 
     /** Called on Porcupine's audio thread. */

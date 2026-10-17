@@ -2,6 +2,7 @@ package com.jarvis.assistant.system
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -17,6 +18,99 @@ import com.jarvis.assistant.core.WhatsAppSender
  * Nothing is read or stored; it only looks for the Send button and the app that is in front.
  */
 class JarvisAccessibilityService : AccessibilityService() {
+
+    companion object {
+        @Volatile
+        var instance: JarvisAccessibilityService? = null
+            private set
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        instance = null
+        return super.onUnbind(intent)
+    }
+
+    // ------------------------------------------------------------------ screen control (used by the phone agent)
+
+    class Item(val node: AccessibilityNodeInfo, val label: String, val line: String)
+
+    /** Everything useful on the screen in front, numbered. */
+    fun items(): Pair<String, List<Item>> {
+        val root = rootInActiveWindow ?: return "" to emptyList()
+        val out = ArrayList<Item>()
+        fun walk(n: AccessibilityNodeInfo?, depth: Int) {
+            if (n == null || depth > 30 || out.size >= 120 || !n.isVisibleToUser) return
+            val text = n.text?.toString().orEmpty().trim()
+            val desc = n.contentDescription?.toString().orEmpty().trim()
+            val hint = if (Build.VERSION.SDK_INT >= 26) n.hintText?.toString().orEmpty() else ""
+            val label = listOf(text, desc, hint).firstOrNull { it.isNotBlank() }.orEmpty().replace("\n", " ").take(80)
+            val editable = n.isEditable
+            if (label.isNotBlank() || editable || n.isClickable || n.isScrollable) {
+                val flags = buildList {
+                    if (n.isClickable) add("tap")
+                    if (editable) add("type")
+                    if (n.isScrollable) add("scroll")
+                    if (n.isChecked) add("on")
+                }.joinToString(",")
+                out.add(Item(n, label, "[${out.size}] ${n.className?.toString()?.substringAfterLast('.').orEmpty()} \"$label\" $flags".trim()))
+            }
+            for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)
+        }
+        walk(root, 0)
+        return (root.packageName?.toString().orEmpty()) to out
+    }
+
+    private fun tapAncestor(n: AccessibilityNodeInfo): Boolean {
+        var c: AccessibilityNodeInfo? = n
+        var d = 0
+        while (c != null && d < 6) {
+            if (c.isClickable && c.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            c = c.parent
+            d++
+        }
+        return false
+    }
+
+    private fun tapAt(n: AccessibilityNodeInfo): Boolean {
+        val r = android.graphics.Rect()
+        n.getBoundsInScreen(r)
+        val path = android.graphics.Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }
+        val g = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 80)).build()
+        return dispatchGesture(g, null, null)
+    }
+
+    fun click(item: Item): Boolean = tapAncestor(item.node) || tapAt(item.node)
+
+    fun type(item: Item, text: String, submit: Boolean): Boolean {
+        item.node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val args = android.os.Bundle()
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        val ok = item.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        if (ok && submit && Build.VERSION.SDK_INT >= 30) {
+            item.node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+        }
+        return ok
+    }
+
+    fun scroll(items: List<Item>, down: Boolean): Boolean {
+        val n = items.firstOrNull { it.node.isScrollable }?.node ?: return false
+        return n.performAction(if (down) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+    }
+
+    fun global(name: String): Boolean = when (name) {
+        "back" -> performGlobalAction(GLOBAL_ACTION_BACK)
+        "home" -> performGlobalAction(GLOBAL_ACTION_HOME)
+        "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+        "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+        "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+        else -> false
+    }
 
     private val handler = Handler(Looper.getMainLooper())
     private var sending = false

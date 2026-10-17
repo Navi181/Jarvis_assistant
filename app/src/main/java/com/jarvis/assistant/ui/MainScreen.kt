@@ -136,11 +136,6 @@ fun MainScreen(onSettings: () -> Unit) {
                 micLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 return
             }
-            if (Prefs.picoKey.isBlank() && !com.jarvis.assistant.core.WakeModel.ready(ctx)) {
-                Toast.makeText(ctx, "Download the free wake-word model in setup first.", Toast.LENGTH_LONG).show()
-                onSettings()
-                return
-            }
             Prefs.handsFree = true
             WakeWordService.start(ctx)
             handsFree = true

@@ -1,5 +1,14 @@
 package com.jarvis.assistant.ui
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import com.jarvis.assistant.core.A11y
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -64,6 +73,41 @@ fun JarvisUi() {
         var intro by remember { mutableStateOf(true) }
         var signedIn by remember { mutableStateOf(Prefs.signedIn) }
         var tab by remember { mutableStateOf(if (Prefs.onboarded) Tab.Home else Tab.Setup) }
+
+        // Everything Jarvis can do is switched on for you, once, right after sign-in.
+        val allPerms = remember {
+            buildList {
+                add(Manifest.permission.RECORD_AUDIO)
+                add(Manifest.permission.READ_CONTACTS)
+                add(Manifest.permission.CALL_PHONE)
+                add(Manifest.permission.READ_CALENDAR)
+                add(Manifest.permission.WRITE_CALENDAR)
+                if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+                add(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE)
+                if (Build.VERSION.SDK_INT >= 29) add(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            }.toTypedArray()
+        }
+        val askAll = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+            if (r[Manifest.permission.RECORD_AUDIO] == true) {
+                // hands-free is on by default
+                Prefs.handsFree = true
+                WakeWordService.start(ctx)
+            }
+            if (!A11y.enabled(ctx)) {
+                try {
+                    Toast.makeText(ctx, "Last step: switch Jarvis on here so I can use your phone for you.", Toast.LENGTH_LONG).show()
+                    ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (_: Exception) {
+                }
+            }
+        }
+        val permPrefs = remember { ctx.getSharedPreferences("jarvis_once", android.content.Context.MODE_PRIVATE) }
+        LaunchedEffect(signedIn, intro) {
+            if (signedIn && !intro && !permPrefs.getBoolean("permsAsked", false)) {
+                permPrefs.edit().putBoolean("permsAsked", true).apply()
+                askAll.launch(allPerms)
+            }
+        }
 
         if (intro) {
             IntroScreen { intro = false }

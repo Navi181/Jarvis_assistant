@@ -73,6 +73,7 @@ object Llm {
         val list = order(search)
         if (list.isEmpty()) throw LlmFailure(LlmFailure.Kind.NO_KEY, Prefs.provider)
         var first: LlmFailure? = null
+        var detail = ""
         for (p in list) {
             try {
                 val out = call(p, Prefs.keyFor(p))
@@ -84,25 +85,33 @@ object Llm {
             } catch (e: LlmFailure) {
                 if (first == null) first = e
             } catch (e: IOException) {
-                if (first == null) first = classify(p, e)
+                if (first == null) {
+                    first = classify(p, e)
+                    detail = e.message.orEmpty().replace(Regex("\\s+"), " ").take(160)
+                }
             } catch (e: Exception) {
                 if (first == null) first = LlmFailure(LlmFailure.Kind.OTHER, p)
             }
         }
         val f = first ?: LlmFailure(LlmFailure.Kind.OTHER, list.first())
-        lastProblem = "${f.providerName}: ${f.kind}" + if (f.code != 0) " (HTTP ${f.code})" else ""
+        lastProblem = "${f.providerName}: ${f.kind}" + (if (f.code != 0) " (HTTP ${f.code})" else "") + (if (detail.isNotBlank()) " - $detail" else "")
         throw f
     }
 
     private fun httpCode(e: IOException): Int =
         Regex("HTTP (\\d{3})").find(e.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
+    private fun keyProblem(e: IOException): Boolean {
+        val m = e.message.orEmpty()
+        return "API key" in m || "API_KEY" in m || "api_key" in m || "Invalid API" in m || "invalid_api_key" in m || "leaked" in m
+    }
+
     private fun classify(provider: String, e: IOException): LlmFailure {
         val code = httpCode(e)
         val kind = when {
             code == 429 -> LlmFailure.Kind.QUOTA
-            code == 401 || code == 403 -> LlmFailure.Kind.BAD_KEY
-            code == 400 && "API key" in e.message.orEmpty() -> LlmFailure.Kind.BAD_KEY
+            code == 401 -> LlmFailure.Kind.BAD_KEY
+            (code == 400 || code == 403) && keyProblem(e) -> LlmFailure.Kind.BAD_KEY
             code >= 500 -> LlmFailure.Kind.SERVER
             code == 0 -> LlmFailure.Kind.NETWORK
             else -> LlmFailure.Kind.OTHER
@@ -204,7 +213,7 @@ object Llm {
                 return res
             } catch (e: IOException) {
                 last = e
-                if (!nextModelWorthTrying(e)) throw e
+                if (keyProblem(e) || !nextModelWorthTrying(e)) throw e
             }
         }
         // the saved list may be stale: forget it so the next question fetches a fresh one
@@ -275,7 +284,7 @@ object Llm {
                         last = e2
                     }
                 }
-                if (!nextModelWorthTrying(last!!)) throw last
+                if (keyProblem(last!!) || !nextModelWorthTrying(last)) throw last
             }
         }
         groqAt = 0L

@@ -38,3 +38,6 @@
 | H3 | Manly voice, WhatsApp auto-send, focus lock | DONE (not yet built in cloud) |
 | H4 | Free wake word (Vosk) with one-time model download; Picovoice optional | DONE (not yet built in cloud) |
 | H5 | Fixed AI 404s (live model discovery, new model names), news/facts without a key, WhatsApp groups, realistic plasma orb, Jarvis-style fonts, Study layout fix, Google sign-in as the main button, calendar / install app / Amazon search commands | DONE (not yet built in cloud) |
+| H6 | Calendar read/write with permission, key cleaning + real error detail in Setup, deeper default voice, hands-free works without a download (Google recogniser fallback) and hears Jarvis misspellings | DONE (not yet built in cloud) |
+| H6b | Music: asks Spotify / Amazon Music / Joytify, opens the song in that app and presses Play | DONE (not yet built in cloud) |
+| H7 | Phone agent: say any job; Jarvis reads the screen and taps/types through any app (stops before payments, deletes, passwords). Permissions, hands-free and accessibility prompt now run automatically after sign-in | DONE (not yet built in cloud) |

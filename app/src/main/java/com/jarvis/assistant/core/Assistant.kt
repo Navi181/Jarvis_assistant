@@ -91,7 +91,7 @@ object Assistant {
 
     // Google voice ids that are male, best first. Used when the user hasn't picked one.
     private val maleHints = listOf(
-        "en-in-x-end-local", "en-in-x-end-network", "en-gb-x-rjs-local", "en-gb-x-gbd-local",
+        "en-in-x-end-local", "en-in-x-end-network", "en-in-x-ahp-local", "en-gb-x-rjs-local", "en-gb-x-gbd-local",
         "en-us-x-iom-local", "en-us-x-iol-local", "en-us-x-tpd-local", "en-us-x-iob-local"
     )
 

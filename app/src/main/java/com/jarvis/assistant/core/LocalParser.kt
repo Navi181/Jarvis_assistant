@@ -90,6 +90,8 @@ object LocalParser {
             if (!it.groupValues[1].contains("update")) return Plan("install_app", target = it.groupValues[1].trim())
         }
 
+        Regex("^(?:what(?:'s| is)?(?: is)? on my (?:calendar|schedule)|what(?:'s| is) my (?:schedule|agenda)|do i have any (?:meetings?|events?|plans)|my (?:schedule|agenda|calendar))\\s*(today|tomorrow)?$").find(t)
+            ?.let { return Plan("agenda", value = it.groupValues[1].ifBlank { "today" }) }
         // ---- live facts: answered directly from the web, never as links
         if (Regex("\\b(who won|who is winning|who'?s winning|who wins|live score|scores? (?:of|for)|latest news|news (?:about|on|today)|breaking news|stock price|share price|price of|exchange rate|who is the current|current (?:president|prime minister|ceo|champion)|when is the next|yesterday'?s|last night'?s|today'?s (?:match|game))\\b").containsMatchIn(t)) {
             return Plan("web_answer", target = t)
@@ -146,7 +148,7 @@ object LocalParser {
         Regex("^play\\s+(.+)$").find(t)?.let { m ->
             var q = m.groupValues[1].trim()
             var where = ""
-            Regex("\\s+on\\s+(youtube|spotify)$").find(q)?.let { w ->
+            Regex("\\s+(?:on|in|using|with)\\s+(youtube(?: music)?|spotify|amazon(?: music)?|prime music|joytify)$").find(q)?.let { w ->
                 where = w.groupValues[1]
                 q = q.removeRange(w.range).trim()
             }
@@ -168,6 +170,7 @@ object LocalParser {
         val a = answerRaw.trim().trimEnd('.', '!', '?', ',', ' ')
         if (a.isEmpty()) return null
         if (Regex("^(?:stop|cancel|never ?mind|forget it|no|nope|nothing)$", RegexOption.IGNORE_CASE).matches(a)) return Plan("noop")
+        if (pending.action == "play_music" && pending.value == "?pick") return pending.copy(value = a)
         return when (pending.action) {
             "call", "navigate", "search", "play_music", "open_app", "maps", "weather" ->
                 pending.copy(target = a.removePrefix("call ").removePrefix("to ").trim())

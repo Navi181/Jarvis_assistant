@@ -42,12 +42,12 @@ object Prefs {
 
     /** Lower = deeper. 1.0 is the voice's natural pitch. */
     var voicePitch: Float
-        get() = sp.getFloat("voicePitch", 0.78f)
-        set(v) = sp.edit().putFloat("voicePitch", v).apply()
+        get() = sp.getFloat("voicePitch2", 0.6f)
+        set(v) = sp.edit().putFloat("voicePitch2", v).apply()
 
     var voiceRate: Float
-        get() = sp.getFloat("voiceRate", 0.95f)
-        set(v) = sp.edit().putFloat("voiceRate", v).apply()
+        get() = sp.getFloat("voiceRate2", 0.92f)
+        set(v) = sp.edit().putFloat("voiceRate2", v).apply()
 
     var callMe: String
         get() = str("callMe", "sir")
@@ -114,11 +114,12 @@ object Prefs {
     fun addNote(n: String) = put("notes", (notes() + n.trim()).joinToString("\u001F"))
     fun clearNotes() = put("notes", "")
 
+    /** Keys are cleaned of spaces, line breaks and quotes: a pasted key often carries an invisible one. */
     fun keyFor(p: String): String = when (p) {
         "groq" -> groqKey
         "claude" -> claudeKey
         else -> geminiKey
-    }
+    }.filter { !it.isWhitespace() && it != '"' && it != '\'' }
 
     val activeKey: String get() = keyFor(provider)
 

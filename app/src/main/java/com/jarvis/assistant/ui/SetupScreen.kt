@@ -91,6 +91,8 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
         add(Manifest.permission.RECORD_AUDIO)
         add(Manifest.permission.READ_CONTACTS)
         add(Manifest.permission.CALL_PHONE)
+        add(Manifest.permission.READ_CALENDAR)
+        add(Manifest.permission.WRITE_CALENDAR)
         if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         add(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE)
         if (Build.VERSION.SDK_INT >= 29) add(Manifest.permission.ACCESS_MEDIA_LOCATION)
@@ -139,6 +141,7 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                 Status("Microphone", has(Manifest.permission.RECORD_AUDIO))
                 Status("Contacts", has(Manifest.permission.READ_CONTACTS))
                 Status("Phone calls", has(Manifest.permission.CALL_PHONE))
+                Status("Calendar", has(Manifest.permission.READ_CALENDAR) && has(Manifest.permission.WRITE_CALENDAR))
                 if (Build.VERSION.SDK_INT >= 33) Status("Notifications", has(Manifest.permission.POST_NOTIFICATIONS))
                 Spacer(Modifier.height(4.dp))
                 PrimaryButton("Grant permissions") { permLauncher.launch(perms.toTypedArray()) }
@@ -283,7 +286,7 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     value = pitch,
                     onValueChange = { pitch = it },
                     onValueChangeFinished = { Prefs.voicePitch = pitch; Assistant.applyVoiceSettings(); Assistant.previewVoice() },
-                    valueRange = 0.55f..1.1f,
+                    valueRange = 0.4f..1.1f,
                     colors = SliderDefaults.colors(thumbColor = Cyan, activeTrackColor = Cyan)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -57,9 +57,11 @@ object Actions {
         "note_clear" -> { Prefs.clearNotes(); Outcome("All your notes are cleared.") }
         "notifications" -> notifications(ctx)
         "briefing" -> briefing(ctx)
+        "phone_do" -> withContext(Dispatchers.Default) { Outcome(PhoneAgent.run(ctx, p.target.ifBlank { p.message })) }
         "shop" -> shop(ctx, p)
         "install_app" -> installApp(ctx, p)
         "calendar" -> calendar(ctx, p)
+        "agenda" -> agenda(ctx, p)
         "web_answer" -> withContext(Dispatchers.IO) { info(Brain.webAnswer(p.target.ifBlank { p.message })) }
         "tutor" -> withContext(Dispatchers.IO) { info(Brain.tutor(p.value, p.target, true)) }
         "time" -> info("It's " + LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())) + ".")
@@ -272,7 +274,35 @@ object Actions {
         return done(ok, "Opening the Play Store for $q. Tap Install.", "I couldn't open the Play Store.")
     }
 
-    /** Opens the calendar with the event filled in. Plan: message = title, hour/minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length. */
+    private fun calPerm(ctx: Context) =
+        granted(ctx, Manifest.permission.READ_CALENDAR) && granted(ctx, Manifest.permission.WRITE_CALENDAR)
+
+    /** The calendar to write into: a writable one, the main Google one first. */
+    private fun writableCalendar(ctx: Context): Long? {
+        val C = android.provider.CalendarContract.Calendars
+        var best: Long? = null
+        var bestScore = -1
+        try {
+            ctx.contentResolver.query(
+                C.CONTENT_URI, arrayOf(C._ID, C.IS_PRIMARY, C.ACCOUNT_TYPE, C.CALENDAR_ACCESS_LEVEL, C.VISIBLE),
+                null, null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getInt(3) < 500) continue
+                    var s = 1
+                    if (c.getInt(1) == 1) s += 4
+                    if (c.getString(2) == "com.google") s += 2
+                    if (c.getInt(4) == 1) s += 1
+                    if (s > bestScore) { bestScore = s; best = c.getLong(0) }
+                }
+            }
+        } catch (e: Exception) {
+            return null
+        }
+        return best
+    }
+
+    /** Plan: message = title, hour/minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length. Saves straight into the calendar. */
     private fun calendar(ctx: Context, p: Plan): Outcome {
         val title = p.message.trim().ifBlank { "Blocked time" }
         val c = java.util.Calendar.getInstance()
@@ -289,28 +319,125 @@ object Actions {
         c.set(java.util.Calendar.SECOND, 0)
         val start = c.timeInMillis
         val end = start + (if (p.seconds > 0) p.seconds * 1000L else 3_600_000L)
+        val whenText = java.text.SimpleDateFormat("EEE d MMM, h:mm a", Locale.getDefault()).format(java.util.Date(start))
+
+        if (calPerm(ctx)) {
+            val id = writableCalendar(ctx)
+            if (id != null) {
+                try {
+                    val E = android.provider.CalendarContract.Events
+                    val values = android.content.ContentValues().apply {
+                        put(E.CALENDAR_ID, id)
+                        put(E.TITLE, title)
+                        put(E.DTSTART, start)
+                        put(E.DTEND, end)
+                        put(E.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+                    }
+                    if (ctx.contentResolver.insert(E.CONTENT_URI, values) != null) {
+                        return Outcome(p.reply.ifBlank { "Done. \"$title\" is in your calendar for $whenText." })
+                    }
+                } catch (e: Exception) {
+                    // fall through to the calendar app
+                }
+            }
+        }
         val i = Intent(Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
             .putExtra(android.provider.CalendarContract.Events.TITLE, title)
             .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
             .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, end)
-        return done(launch(ctx, i), p.reply.ifBlank { "Your calendar is open with \"$title\". Tap Save." }, "I couldn't open your calendar.")
+        val tip = if (calPerm(ctx)) "" else " Allow calendar access in setup and I'll save it myself next time."
+        return done(launch(ctx, i), "Your calendar is open with \"$title\" for $whenText. Tap Save.$tip", "I couldn't open your calendar.")
+    }
+
+    /** Reads the day's events aloud. value = today | tomorrow. */
+    private fun agenda(ctx: Context, p: Plan): Outcome {
+        if (!calPerm(ctx)) return Outcome("I need calendar permission to read your schedule. Please allow it in setup.")
+        val c = java.util.Calendar.getInstance()
+        if (p.value.equals("tomorrow", true)) c.add(java.util.Calendar.DAY_OF_YEAR, 1)
+        c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0)
+        val from = c.timeInMillis
+        val to = from + 86_400_000L
+        val uri = android.provider.CalendarContract.Instances.CONTENT_URI.buildUpon().also {
+            android.content.ContentUris.appendId(it, from); android.content.ContentUris.appendId(it, to)
+        }.build()
+        val fmt = java.text.SimpleDateFormat("h:mm a", Locale.getDefault())
+        val items = ArrayList<String>()
+        try {
+            ctx.contentResolver.query(
+                uri,
+                arrayOf(android.provider.CalendarContract.Instances.TITLE, android.provider.CalendarContract.Instances.BEGIN, android.provider.CalendarContract.Instances.ALL_DAY),
+                null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC"
+            )?.use { q ->
+                while (q.moveToNext() && items.size < 8) {
+                    val t = q.getString(0).orEmpty().ifBlank { "Busy" }
+                    items.add(if (q.getInt(2) == 1) "$t, all day" else t + " at " + fmt.format(java.util.Date(q.getLong(1))))
+                }
+            }
+        } catch (e: Exception) {
+            return Outcome("I couldn't read your calendar.")
+        }
+        val day = if (p.value.equals("tomorrow", true)) "tomorrow" else "today"
+        if (items.isEmpty()) return info("You have nothing on your calendar $day.")
+        return info("You have ${items.size} thing${if (items.size > 1) "s" else ""} $day. " + items.joinToString(". ") + ".")
+    }
+
+    private fun pkgByLabel(ctx: Context, word: String): String? {
+        val pm = ctx.packageManager
+        return pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+            .firstOrNull { it.loadLabel(pm).toString().lowercase().contains(word) }?.activityInfo?.packageName
+    }
+
+    private fun installed(ctx: Context, pkg: String) = try {
+        ctx.packageManager.getPackageInfo(pkg, 0); true
+    } catch (e: Exception) {
+        false
     }
 
     private fun playMusic(ctx: Context, p: Plan): Outcome {
         val q = p.target.trim()
         if (q.isEmpty()) return ask("What should I play?", p)
-        val youtube = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(q)))
-        val ok = when (p.value.lowercase()) {
-            "youtube" -> launch(ctx, youtube)
-            "spotify" -> launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:" + Uri.encode(q)))) || launch(ctx, youtube)
-            else -> launch(
-                ctx,
-                Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
-                    .putExtra(SearchManager.QUERY, q)
-                    .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
-            ) || launch(ctx, youtube)
+        val where = p.value.lowercase().trim()
+        val platform = when {
+            "spotify" in where -> "spotify"
+            "amazon" in where || "prime" in where -> "amazon"
+            "joytify" in where || "joy" in where -> "joytify"
+            "youtube" in where || "you tube" in where -> "youtube"
+            else -> ""
         }
-        return done(ok, p.reply.ifBlank { "Playing $q." }, "I couldn't start the music.")
+        if (platform.isEmpty()) {
+            return ask("Which app should I use: Spotify, Amazon Music or Joytify?", p.copy(value = "?pick"))
+        }
+        val youtube = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(q)))
+        if (platform == "youtube") return done(launch(ctx, youtube), p.reply.ifBlank { "Searching YouTube for $q." }, "I couldn't open YouTube.")
+
+        val (pkg, name) = when (platform) {
+            "spotify" -> "com.spotify.music" to "Spotify"
+            "amazon" -> "com.amazon.mp3" to "Amazon Music"
+            else -> (pkgByLabel(ctx, "joytify") ?: "") to "Joytify"
+        }
+        if (pkg.isEmpty() || !installed(ctx, pkg)) return Outcome("I couldn't find $name on this phone.")
+
+        val search = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+            .setPackage(pkg)
+            .putExtra(SearchManager.QUERY, q)
+            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+        var ok = launch(ctx, search)
+        if (!ok && platform == "spotify") ok = launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:" + Uri.encode(q))).setPackage(pkg))
+        if (!ok) ok = ctx.packageManager.getLaunchIntentForPackage(pkg)?.let { launch(ctx, it) } ?: false
+        if (ok) {
+            // some apps open on the song but wait to be told to start: send Play a few seconds later
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    if (!am.isMusicActive) {
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    }
+                } catch (_: Exception) {
+                }
+            }, 4000)
+        }
+        return done(ok, p.reply.ifBlank { "Playing $q on $name." }, "I couldn't open $name.")
     }
 
     /** Works with any music / video app, no permission needed. */
