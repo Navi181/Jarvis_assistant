@@ -20,7 +20,7 @@ object GeminiTts {
     @Volatile
     private var blockedUntil = 0L
 
-    fun available(): Boolean = Prefs.aiVoice && Prefs.geminiKey.isNotBlank() && System.currentTimeMillis() > blockedUntil
+    fun available(): Boolean = Extras.aiVoice && Prefs.geminiKey.isNotBlank() && System.currentTimeMillis() > blockedUntil
 
     private fun speechModels(key: String): List<String> {
         val now = System.currentTimeMillis()
@@ -49,7 +49,7 @@ object GeminiTts {
     fun synth(text: String): Pair<ByteArray, Int>? {
         if (!available()) return null
         val key = Prefs.keyFor("gemini")
-        val voice = Prefs.aiVoiceName.ifBlank { voices[0] }
+        val voice = Extras.aiVoiceName.ifBlank { voices[0] }
         val prompt = "Say calmly, in a deep, refined British male voice with quiet confidence, unhurried like a loyal AI butler: $text"
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))

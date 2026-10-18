@@ -22,7 +22,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.Path
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.jarvis.assistant.core.Extras
+import com.jarvis.assistant.core.Prefs
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.abs
@@ -37,84 +41,177 @@ fun Modifier.glass(shape: Shape = RoundedCornerShape(20.dp)): Modifier = this
     .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.03f))))
     .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.04f))), shape)
 
-private class Star(val x: Float, val y: Float, val r: Float, val phase: Float, val twinkle: Int)
+/** The chosen background. Changing it takes effect at once, everywhere. */
+object BackdropState {
+    val styles = listOf(
+        "stars" to "Starfield",
+        "doodles" to "Doodles",
+        "aurora" to "Aurora",
+        "grid" to "HUD grid",
+        "rain" to "Data rain",
+        "plain" to "Plain black"
+    )
+    var style by mutableStateOf("stars")
+        private set
+    private var loaded = false
 
-/** [revs] = full orbits per 4-minute loop, so the animation repeats seamlessly. */
-private class Planet(val sizeDp: Float, val color: Color, val revs: Int, val start: Float, val ring: Boolean = false)
+    fun load() {
+        if (!loaded) {
+            loaded = true
+            style = Extras.backdrop.ifBlank { "stars" }
+        }
+    }
 
-private val PLANETS = listOf(
-    Planet(2.2f, Color(0xFF9CA3AF), 12, 0.10f),                // Mercury
-    Planet(3.4f, Color(0xFFE8C28A), 8, 0.55f),                 // Venus
-    Planet(3.7f, Color(0xFF3B82F6), 5, 0.80f),                 // Earth
-    Planet(2.8f, Color(0xFFD9693F), 3, 0.30f),                 // Mars
-    Planet(7.0f, Color(0xFFD6A77A), 2, 0.65f),                 // Jupiter
-    Planet(6.0f, Color(0xFFE3CB8F), 1, 0.05f, ring = true),    // Saturn
-    Planet(4.6f, Color(0xFF7DD3E8), 1, 0.45f),                 // Uranus
-    Planet(4.4f, Color(0xFF4F6EF0), 1, 0.92f)                  // Neptune
-)
+    fun pick(s: String) {
+        style = s
+        Extras.backdrop = s
+    }
+}
 
-/** A dark, calm night sky with a tilted, slowly turning solar system. Loops seamlessly. */
+private class Star(val x: Float, val y: Float, val r: Float, val phase: Float, val twinkle: Int, val speed: Int)
+private class Doodle(val x: Float, val y: Float, val kind: Int, val size: Float, val speed: Int, val spin: Int, val color: Color, val phase: Float)
+private class Streak(val x: Float, val len: Float, val speed: Int, val phase: Float, val alpha: Float)
+
+private val DOODLE_COLORS = listOf(Color(0xFF22D3EE), Color(0xFFE6F1FF), Color(0xFF8B5CF6), Color(0xFF3B82F6), Color(0xFFFFB454))
+
+/** Moving backgrounds (all loop seamlessly and stay dim so text is always easy to read). */
 @Composable
 fun Backdrop(modifier: Modifier = Modifier) {
-    val stars = remember {
-        List(150) { Star(Random.nextFloat(), Random.nextFloat(), Random.nextFloat() * 1.4f + 0.4f, Random.nextFloat() * 6.28f, 20 + Random.nextInt(40)) }
-    }
-    val belt = remember { List(90) { Pair(Random.nextFloat(), Random.nextFloat() * 2f - 1f) } }
+    BackdropState.load()
+    val style = BackdropState.style
+    val stars = remember { List(140) { Star(Random.nextFloat(), Random.nextFloat(), Random.nextFloat() * 1.4f + 0.4f, Random.nextFloat() * 6.28f, 20 + Random.nextInt(40), 1 + Random.nextInt(3)) } }
+    val doodles = remember { List(16) { Doodle(Random.nextFloat(), Random.nextFloat(), it % 8, 14f + Random.nextFloat() * 22f, 1 + Random.nextInt(2), 1 + Random.nextInt(3), DOODLE_COLORS[Random.nextInt(DOODLE_COLORS.size)], Random.nextFloat() * 6.28f) } }
+    val streaks = remember { List(34) { Streak(Random.nextFloat(), 0.08f + Random.nextFloat() * 0.18f, 2 + Random.nextInt(4), Random.nextFloat(), 0.25f + Random.nextFloat() * 0.4f) } }
     val inf = rememberInfiniteTransition(label = "backdrop")
-    val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(240000, easing = LinearEasing)), label = "t")
+    val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(60000, easing = LinearEasing)), label = "t")
     val tau = (2 * PI).toFloat()
 
     Canvas(modifier.fillMaxSize()) {
-        drawRect(Brush.verticalGradient(listOf(Bg, BgDeep, Bg)))
         val w = size.width
         val h = size.height
-        val cx = w * 0.5f
-        val cy = h * 0.40f
-        val c = Offset(cx, cy)
+        val c = Offset(w * 0.5f, h * 0.4f)
+        drawRect(Brush.verticalGradient(listOf(Bg, BgDeep, Bg)))
 
-        for (s in stars) {
-            val a = 0.2f + 0.6f * abs(sin(t * tau * s.twinkle + s.phase))
-            drawCircle(Color.White.copy(alpha = a * 0.7f), s.r.dp.toPx() * 0.5f, Offset(s.x * w, s.y * h))
-        }
-
-        // the sun, warm and dim so it never fights the orb or the text
-        val sunR = w * 0.24f
-        drawCircle(
-            Brush.radialGradient(listOf(Color(0xFFFFB454).copy(alpha = 0.30f), Color(0xFFFF7A1A).copy(alpha = 0.08f), Color.Transparent), c, sunR),
-            radius = sunR, center = c
-        )
-
-        rotate(-14f, c) {
-            PLANETS.forEachIndexed { i, p ->
-                val rx = w * (0.15f + 0.068f * i)
-                val ry = rx * 0.36f
-                drawOval(Color.White.copy(alpha = 0.07f), Offset(cx - rx, cy - ry), Size(rx * 2, ry * 2), style = Stroke(1.dp.toPx()))
-                if (i == 3) {
-                    // asteroid belt between Mars and Jupiter
-                    val brx = w * (0.15f + 0.068f * 3.5f)
-                    for (d in belt) {
-                        val ang = d.first * tau + t * tau
-                        val rr = brx + d.second * w * 0.012f
-                        drawCircle(Color(0xFFB8A890).copy(alpha = 0.45f), 0.7.dp.toPx(), Offset(cx + rr * cos(ang), cy + rr * 0.36f * sin(ang)))
-                    }
+        when (style) {
+            "stars" -> {
+                for (s in stars) {
+                    val y = ((s.y + t * s.speed) % 1f)
+                    val a = 0.2f + 0.6f * abs(sin(t * tau * s.twinkle + s.phase))
+                    val p = Offset(s.x * w, y * h)
+                    drawCircle(Color.White.copy(alpha = a * 0.75f), s.r.dp.toPx() * 0.5f * (0.7f + 0.3f * s.speed), p)
+                    if (s.speed == 3) drawLine(Color.White.copy(alpha = a * 0.18f), p, Offset(p.x, p.y - 10.dp.toPx()), strokeWidth = 0.8.dp.toPx())
                 }
-                val ang = p.start * tau + t * tau * p.revs
-                val px = cx + rx * cos(ang)
-                val py = cy + ry * sin(ang)
-                val r = p.sizeDp.dp.toPx()
-                val shade = if (sin(ang) < 0) 0.75f else 1f
-                val lit = Offset(px + (cx - px) * 0.12f, py + (cy - py) * 0.12f)
-                drawCircle(
-                    Brush.radialGradient(listOf(lerp(p.color, Color.White, 0.35f), p.color, lerp(p.color, Color.Black, 0.7f)), lit, r * 1.6f),
-                    radius = r, center = Offset(px, py), alpha = shade
-                )
-                if (p.ring) {
-                    drawOval(p.color.copy(alpha = 0.55f * shade), Offset(px - r * 1.9f, py - r * 0.55f), Size(r * 3.8f, r * 1.1f), style = Stroke(1.2.dp.toPx()))
+                // an occasional shooting star
+                val k = (t * 4f) % 1f
+                if (k < 0.18f) {
+                    val f = k / 0.18f
+                    val sx = w * (0.15f + 0.5f * ((t * 4f).toInt() % 3) / 3f) + f * w * 0.35f
+                    val sy = h * 0.08f + f * h * 0.22f
+                    drawLine(
+                        Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.85f * (1f - f))), Offset(sx - 70.dp.toPx(), sy - 40.dp.toPx()), Offset(sx, sy)),
+                        Offset(sx - 70.dp.toPx(), sy - 40.dp.toPx()), Offset(sx, sy), strokeWidth = 1.6.dp.toPx()
+                    )
                 }
             }
+            "doodles" -> {
+                for (d in doodles) {
+                    val y = 1.1f - ((d.y + t * d.speed) % 1.2f)
+                    val cx = d.x * w + sin(t * tau * d.speed + d.phase) * 14.dp.toPx()
+                    val cy = y * h
+                    val r = d.size.dp.toPx()
+                    val st = Stroke(1.4.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    val col = d.color.copy(alpha = 0.20f)
+                    rotate(t * 360f * d.spin * (if (d.kind % 2 == 0) 1 else -1), Offset(cx, cy)) {
+                        when (d.kind) {
+                            0 -> drawCircle(col, r, Offset(cx, cy), style = st)
+                            1 -> drawPath(poly(cx, cy, r, 3), col, style = st)
+                            2 -> drawRect(col, Offset(cx - r * 0.8f, cy - r * 0.8f), Size(r * 1.6f, r * 1.6f), style = st)
+                            3 -> {
+                                drawLine(col, Offset(cx - r, cy), Offset(cx + r, cy), 1.4.dp.toPx())
+                                drawLine(col, Offset(cx, cy - r), Offset(cx, cy + r), 1.4.dp.toPx())
+                            }
+                            4 -> drawPath(squiggle(cx, cy, r), col, style = st)
+                            5 -> drawPath(star(cx, cy, r), col, style = st)
+                            6 -> drawPath(poly(cx, cy, r, 6), col, style = st)
+                            else -> drawArc(col, 20f, 250f, false, Offset(cx - r, cy - r), Size(r * 2, r * 2), style = st)
+                        }
+                    }
+                }
+            }
+            "aurora" -> {
+                val blobs = listOf(
+                    Triple(Color(0xFF22D3EE), 1, 0f), Triple(Color(0xFF8B5CF6), 2, 1.7f),
+                    Triple(Color(0xFF3B82F6), 1, 3.1f), Triple(Color(0xFF34D399), 3, 4.4f)
+                )
+                blobs.forEach { (col, k, ph) ->
+                    val bx = w * (0.5f + 0.38f * sin(t * tau * k + ph))
+                    val by = h * (0.35f + 0.28f * cos(t * tau * (k + 1) * 0.5f * 2f + ph))
+                    val r = max(w, h) * 0.55f
+                    drawCircle(Brush.radialGradient(listOf(col.copy(alpha = 0.20f), Color.Transparent), Offset(bx, by), r), r, Offset(bx, by))
+                }
+            }
+            "grid" -> {
+                val step = 38.dp.toPx()
+                val off = (t * 6f * step) % step
+                val col = Color(0xFF22D3EE).copy(alpha = 0.07f)
+                var x = -step + off
+                while (x < w + step) { drawLine(col, Offset(x, 0f), Offset(x, h), 1f); x += step }
+                var y = -step + off
+                while (y < h + step) { drawLine(col, Offset(0f, y), Offset(w, y), 1f); y += step }
+                val sy = h * ((t * 3f) % 1f)
+                drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color(0xFF22D3EE).copy(alpha = 0.10f), Color.Transparent), sy - 90.dp.toPx(), sy + 90.dp.toPx()), Offset(0f, sy - 90.dp.toPx()), Size(w, 180.dp.toPx()))
+                for (i in 0 until 14) {
+                    val gx = (((i * 53) % 17) / 17f) * w
+                    val gy = (((i * 31) % 13) / 13f) * h
+                    val a = 0.15f + 0.5f * abs(sin(t * tau * (1 + i % 3) + i))
+                    drawCircle(Color(0xFF22D3EE).copy(alpha = a * 0.6f), 2.dp.toPx(), Offset(gx - gx % step + off, gy - gy % step + off))
+                }
+            }
+            "rain" -> {
+                for (s in streaks) {
+                    val head = ((s.phase + t * s.speed) % 1.3f) - 0.15f
+                    val x = s.x * w
+                    val y1 = head * h
+                    val y0 = y1 - s.len * h
+                    drawLine(
+                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xFF22D3EE).copy(alpha = s.alpha)), y0, y1),
+                        Offset(x, y0), Offset(x, y1), strokeWidth = 1.6.dp.toPx()
+                    )
+                    drawCircle(Color.White.copy(alpha = s.alpha), 1.4.dp.toPx(), Offset(x, y1))
+                }
+            }
+            else -> {}
         }
+        // soft vignette so the edges are always deep and calm
+        drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)), c, max(w, h) * 0.8f))
+    }
+}
 
-        // vignette: darker edges, so everything reads as deep space
-        drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)), c, max(w, h) * 0.8f))
+private fun poly(cx: Float, cy: Float, r: Float, n: Int): Path = Path().apply {
+    for (i in 0 until n) {
+        val a = (i * 2 * PI / n - PI / 2).toFloat()
+        val x = cx + r * cos(a)
+        val y = cy + r * sin(a)
+        if (i == 0) moveTo(x, y) else lineTo(x, y)
+    }
+    close()
+}
+
+private fun star(cx: Float, cy: Float, r: Float): Path = Path().apply {
+    for (i in 0 until 10) {
+        val a = (i * PI / 5 - PI / 2).toFloat()
+        val rr = if (i % 2 == 0) r else r * 0.42f
+        val x = cx + rr * cos(a)
+        val y = cy + rr * sin(a)
+        if (i == 0) moveTo(x, y) else lineTo(x, y)
+    }
+    close()
+}
+
+private fun squiggle(cx: Float, cy: Float, r: Float): Path = Path().apply {
+    moveTo(cx - r, cy)
+    for (i in 0 until 4) {
+        val x0 = cx - r + i * r * 0.5f
+        quadraticBezierTo(x0 + r * 0.125f, cy + (if (i % 2 == 0) -r * 0.5f else r * 0.5f), x0 + r * 0.25f, cy)
     }
 }

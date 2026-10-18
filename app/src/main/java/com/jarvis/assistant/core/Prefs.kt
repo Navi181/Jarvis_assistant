@@ -50,6 +50,15 @@ object Prefs {
         get() = sp.getBoolean("deepVoice", true)
         set(v) = sp.edit().putBoolean("deepVoice", v).apply()
 
+    /** Speak with Gemini's deep British male voice when online (the phone voice is the backup). */
+    var aiVoice: Boolean
+        get() = sp.getBoolean("aiVoice", true)
+        set(v) = sp.edit().putBoolean("aiVoice", v).apply()
+
+    var aiVoiceName: String
+        get() = str("aiVoiceName")
+        set(v) = put("aiVoiceName", v)
+
     var voiceRate: Float
         get() = sp.getFloat("voiceRate2", 0.92f)
         set(v) = sp.edit().putFloat("voiceRate2", v).apply()
@@ -112,6 +121,11 @@ object Prefs {
         set(v) = put("language", v)
 
     /** Small orb on screen while Jarvis is listening and you are in another app. */
+    /** Which moving background to show: stars | doodles | aurora | grid | rain | plain. */
+    var backdrop: String
+        get() = str("backdrop")
+        set(v) = put("backdrop", v)
+
     var listenOrb: Boolean
         get() = sp.getBoolean("listenOrb", true)
         set(v) = sp.edit().putBoolean("listenOrb", v).apply()

@@ -205,10 +205,16 @@ object Llm {
         var last: IOException? = null
         for (model in models.take(5)) {
             try {
-                val res = Net.post(
-                    "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",
-                    mapOf("x-goog-api-key" to key), body.toString()
-                )
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+                val hdr = mapOf("x-goog-api-key" to key)
+                // "thinking" makes answers much slower and a voice assistant doesn't need it; if a model refuses the switch, go without it
+                val res = try {
+                    Net.post(url, hdr, quick(body).toString()).also { if (thinkingOff == null) thinkingOff = true }
+                } catch (e: IOException) {
+                    if (thinkingOff != false && e.message.orEmpty().contains("HTTP 400")) {
+                        Net.post(url, hdr, body.toString()).also { thinkingOff = false }
+                    } else throw e
+                }
                 geminiGood = model
                 return res
             } catch (e: IOException) {
@@ -222,6 +228,15 @@ object Llm {
     }
 
     @Volatile private var geminiGood: String? = null
+    @Volatile private var thinkingOff: Boolean? = null
+
+    private fun quick(body: JSONObject): JSONObject {
+        if (thinkingOff == false) return body
+        val b = JSONObject(body.toString())
+        val gen = b.optJSONObject("generationConfig") ?: JSONObject().also { b.put("generationConfig", it) }
+        gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+        return b
+    }
 
     private fun geminiText(res: String): String {
         val parts = JSONObject(res).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts")

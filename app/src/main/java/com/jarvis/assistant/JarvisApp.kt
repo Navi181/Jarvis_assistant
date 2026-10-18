@@ -13,9 +13,11 @@ class JarvisApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Prefs.init(this)
+        com.jarvis.assistant.core.Extras.init(this)
         CrashLog.install(this)
         Assistant.init(this)
         // the small orange orb while Jarvis listens and you are in another app
         CoroutineScope(Dispatchers.Main).launch { Assistant.phase.collect { ListenOrb.update(this@JarvisApp, it) } }
+        CoroutineScope(Dispatchers.Main).launch { Assistant.messages.collect { ListenOrb.onMessages(this@JarvisApp, it) } }
     }
 }

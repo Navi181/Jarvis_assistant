@@ -67,6 +67,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jarvis.assistant.core.A11y
 import com.jarvis.assistant.core.Assistant
+import com.jarvis.assistant.core.Extras
 import com.jarvis.assistant.core.Prefs
 
 @Composable
@@ -316,6 +317,11 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     PrimaryButton("Test") { Assistant.previewVoice() }
                 }
                 if (label.isNotBlank()) Text(label, color = InkDim, fontSize = 13.sp)
+                var ai by remember { mutableStateOf(Extras.aiVoice) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Jarvis voice: deep British man (online, uses your Gemini key)", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = ai, onCheckedChange = { ai = it; Extras.aiVoice = it; Assistant.previewVoice() })
+                }
                 var deep by remember { mutableStateOf(Prefs.deepVoice) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Deep male voice (works with any phone voice)", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
@@ -328,6 +334,11 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts")))
                     }
                 }
+            }
+
+            Card("Background", "Pick a moving background. It changes right away, on every screen.") {
+                BackdropState.load()
+                Choice(BackdropState.styles, BackdropState.style) { BackdropState.pick(it) }
             }
 
             Card("8 · Make it yours", "Personality, answer length, language and memory.") {

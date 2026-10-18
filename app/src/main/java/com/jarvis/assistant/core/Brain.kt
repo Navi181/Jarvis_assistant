@@ -13,8 +13,19 @@ import java.util.Date
 object Brain {
 
     suspend fun plan(text: String, history: List<Msg>): Plan = withContext(Dispatchers.IO) {
-        LocalParser.parse(text) ?: llmPlan(text, history)
+        // plain questions skip the "work out what to do" step and go straight to one live answer: half the waiting
+        LocalParser.parse(text) ?: (if (isFactQuestion(text) && Prefs.hasAnyKey) Plan("web_answer", target = text) else llmPlan(text, history))
     }
+
+    private val deviceWords = Regex(
+        "(?i)\\b(call|text|message|whatsapp|sms|email|alarm|timer|remind|reminder|open|launch|play|pause|volume|brightness|wifi|wi-fi|bluetooth|" +
+            "flashlight|torch|calendar|schedule|meeting|navigate|directions|weather|temperature|forecast|screenshot|battery|settings|note|photo|picture|" +
+            "camera|install|download|buy|order|shop|turn|switch|set|add|send|remember|forget|quiz|flashcards?|chapter|unit|lesson|my|screen|phone|music|song)\\b"
+    )
+    private val askStart = Regex("(?i)^(who|what|when|where|why|how|which|whose|is|are|was|were|does|do|did|can|could|tell me|explain|define|meaning of|give me)\\b")
+
+    fun isFactQuestion(t: String): Boolean =
+        t.trim().split(Regex("\\s+")).size >= 3 && askStart.containsMatchIn(t.trim()) && !deviceWords.containsMatchIn(t)
 
     private fun personalityLine() = when (Prefs.personality) {
         "formal" -> "You are formal, precise and respectful, like a butler."

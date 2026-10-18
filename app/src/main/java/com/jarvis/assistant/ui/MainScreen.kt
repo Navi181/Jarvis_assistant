@@ -22,7 +22,15 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -108,6 +116,12 @@ fun MainScreen(onSettings: () -> Unit) {
     var typed by remember { mutableStateOf("") }
     // While the keyboard is up, the orb shrinks and everything else steps aside so you can see what you type.
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    // a long answer gets the room: the orb shrinks and the answer scrolls
+    val longReply = msgs.lastOrNull()?.let { !it.fromUser && it.text.length > 150 } == true
+    val compact = imeOpen || longReply
+    val replyScroll = rememberScrollState()
+    androidx.compose.runtime.LaunchedEffect(msgs.lastOrNull()?.id) { replyScroll.scrollTo(0) }
+    var focused by remember { mutableStateOf(false) }
 
     fun sendTyped() {
         val t = typed.trim()
@@ -175,7 +189,7 @@ fun MainScreen(onSettings: () -> Unit) {
             }
 
             // orb
-            if (imeOpen) {
+            if (compact) {
                 JarvisOrb(phase, level, Modifier.padding(top = 4.dp).size(84.dp))
             } else {
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -208,10 +222,10 @@ fun MainScreen(onSettings: () -> Unit) {
 
             // conversation
             Column(
-                (if (imeOpen) Modifier.weight(1f) else Modifier.heightIn(min = 96.dp)).fillMaxWidth().padding(top = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)
+                (if (compact) Modifier.weight(1f).verticalScroll(replyScroll) else Modifier.heightIn(min = 96.dp)).fillMaxWidth().padding(top = 6.dp),
+                verticalArrangement = if (compact) Arrangement.spacedBy(8.dp, Alignment.Top) else Arrangement.spacedBy(8.dp, Alignment.Bottom)
             ) {
-                msgs.takeLast(if (imeOpen) 3 else 2).forEach { m -> key(m.id) { Bubble(m) } }
+                msgs.takeLast(if (compact) 3 else 2).forEach { m -> key(m.id) { Bubble(m) } }
             }
 
             // suggestions
@@ -230,30 +244,44 @@ fun MainScreen(onSettings: () -> Unit) {
                 }
             }
 
-            // keyboard
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = if (imeOpen) 10.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
+            // keyboard: one soft rounded box, the text inside it, a round send button on the right
+            val boxShape = RoundedCornerShape(26.dp)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = if (imeOpen) 10.dp else 0.dp)
+                    .clip(boxShape)
+                    .background(Panel)
+                    .border(1.dp, if (focused) Cyan.copy(alpha = 0.55f) else Outline, boxShape)
+                    .padding(start = 18.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                BasicTextField(
                     value = typed,
                     onValueChange = { typed = it },
-                    placeholder = { Text("Type a command…", color = InkDim, fontSize = 16.sp) },
                     textStyle = TextStyle(color = Ink, fontSize = 17.sp, lineHeight = 24.sp, letterSpacing = 0.sp),
-                    singleLine = true,
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.weight(1f).heightIn(min = 58.dp),
+                    cursorBrush = SolidColor(Cyan),
+                    maxLines = 5,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { sendTyped() }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Cyan,
-                        unfocusedBorderColor = Outline,
-                        focusedTextColor = Ink,
-                        unfocusedTextColor = Ink,
-                        focusedContainerColor = Panel,
-                        unfocusedContainerColor = Panel,
-                        cursorColor = Cyan
-                    )
+                    modifier = Modifier.weight(1f).heightIn(min = 40.dp).padding(vertical = 8.dp).onFocusChanged { focused = it.isFocused },
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (typed.isEmpty()) Text("Message Jarvis…", color = InkDim, fontSize = 17.sp)
+                            inner()
+                        }
+                    }
                 )
-                IconButton(onClick = { sendTyped() }, enabled = typed.isNotBlank()) {
-                    Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send", tint = if (typed.isNotBlank()) Cyan else InkDim)
+                Box(
+                    Modifier
+                        .padding(start = 6.dp)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (typed.isNotBlank()) Cyan else Outline)
+                        .clickable(enabled = typed.isNotBlank()) { sendTyped() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.ArrowUpward, contentDescription = "Send", tint = if (typed.isNotBlank()) Bg else InkDim)
                 }
             }
 
