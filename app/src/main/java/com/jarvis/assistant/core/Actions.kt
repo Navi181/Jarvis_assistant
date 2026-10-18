@@ -47,6 +47,9 @@ object Actions {
         "flashlight" -> flashlight(ctx, p)
         "volume" -> volume(ctx, p)
         "settings" -> settings(ctx, p)
+        "volume_set" -> volumeSet(ctx, p)
+        "ringer" -> ringer(ctx, p)
+        "brightness" -> brightness(ctx, p)
         "camera" -> camera(ctx, p)
         "photo" -> photo(ctx, p)
         "update" -> Outcome(Updater.check(ctx, true))
@@ -70,6 +73,10 @@ object Actions {
         "calendar" -> calendar(ctx, p)
         "agenda" -> agenda(ctx, p)
         "web_answer" -> withContext(Dispatchers.IO) { info(Brain.webAnswer(p.target.ifBlank { p.message })) }
+        "elaborate" -> withContext(Dispatchers.IO) {
+            val t = p.target.ifBlank { p.message }
+            info(if (Regex("(?i)\\b(chapter|unit|lesson|syllabus|textbook|ncert|class \\d+|grade \\d+)\\b").containsMatchIn(t)) Brain.tutor("explain", t, false) else Brain.elaborate(t))
+        }
         "tutor" -> withContext(Dispatchers.IO) { info(Brain.tutor(p.value, p.target, true)) }
         "time" -> info("It's " + LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())) + ".")
         "date" -> info("Today is " + LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())) + ".")
@@ -597,20 +604,105 @@ object Actions {
         }
     }
 
-    /** Android no longer lets apps flip Wi-Fi / Bluetooth silently, so Jarvis opens the right settings page. */
+    private val settingsPages = listOf(
+        "wi" to Settings.ACTION_WIFI_SETTINGS,
+        "bluetooth" to Settings.ACTION_BLUETOOTH_SETTINGS,
+        "airplane" to Settings.ACTION_AIRPLANE_MODE_SETTINGS,
+        "flight" to Settings.ACTION_AIRPLANE_MODE_SETTINGS,
+        "hotspot" to "android.settings.TETHER_SETTINGS",
+        "display" to Settings.ACTION_DISPLAY_SETTINGS,
+        "brightness" to Settings.ACTION_DISPLAY_SETTINGS,
+        "sound" to Settings.ACTION_SOUND_SETTINGS,
+        "battery" to Intent.ACTION_POWER_USAGE_SUMMARY,
+        "location" to Settings.ACTION_LOCATION_SOURCE_SETTINGS,
+        "nfc" to Settings.ACTION_NFC_SETTINGS,
+        "storage" to Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
+        "date" to Settings.ACTION_DATE_SETTINGS,
+        "time" to Settings.ACTION_DATE_SETTINGS,
+        "language" to Settings.ACTION_LOCALE_SETTINGS,
+        "access" to Settings.ACTION_ACCESSIBILITY_SETTINGS,
+        "privacy" to Settings.ACTION_PRIVACY_SETTINGS,
+        "security" to Settings.ACTION_SECURITY_SETTINGS,
+        "data" to "android.settings.DATA_USAGE_SETTINGS",
+        "vpn" to "android.net.vpn.SETTINGS",
+        "cast" to Settings.ACTION_CAST_SETTINGS,
+        "developer" to Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS,
+        "default" to Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS,
+        "keyboard" to Settings.ACTION_INPUT_METHOD_SETTINGS,
+        "about" to Settings.ACTION_DEVICE_INFO_SETTINGS,
+        "sync" to Settings.ACTION_SYNC_SETTINGS,
+        "app" to Settings.ACTION_APPLICATION_SETTINGS,
+        "notification" to Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
+        "disturb" to Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS,
+        "wallpaper" to Intent.ACTION_SET_WALLPAPER
+    )
+
+    /** Opens the right Android settings page. (Switching things on and off is done by "toggle".) */
     private fun settings(ctx: Context, p: Plan): Outcome {
-        val action = when (p.value.lowercase()) {
-            "wifi" -> Settings.ACTION_WIFI_SETTINGS
-            "bluetooth" -> Settings.ACTION_BLUETOOTH_SETTINGS
-            "airplane" -> Settings.ACTION_AIRPLANE_MODE_SETTINGS
-            "hotspot" -> "android.settings.TETHER_SETTINGS"
-            "display" -> Settings.ACTION_DISPLAY_SETTINGS
-            "sound" -> Settings.ACTION_SOUND_SETTINGS
-            "battery" -> Intent.ACTION_POWER_USAGE_SUMMARY
-            "location" -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
-            else -> Settings.ACTION_SETTINGS
+        val k = p.value.lowercase().trim()
+        val action = settingsPages.firstOrNull { k.contains(it.first) }?.second ?: Settings.ACTION_SETTINGS
+        val ok = launch(ctx, Intent(action)) || launch(ctx, Intent(Settings.ACTION_SETTINGS))
+        return done(ok, p.reply.ifBlank { "Opening ${p.value.ifBlank { "settings" }} settings." }, "I couldn't open settings.")
+    }
+
+    private fun volumeSet(ctx: Context, p: Plan): Outcome {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val pct = p.value.toIntOrNull()?.coerceIn(0, 100) ?: return ask("What volume, from 0 to 100?", p)
+        val t = p.target.lowercase()
+        val stream = when {
+            "ring" in t -> AudioManager.STREAM_RING
+            "alarm" in t -> AudioManager.STREAM_ALARM
+            "notif" in t -> AudioManager.STREAM_NOTIFICATION
+            else -> AudioManager.STREAM_MUSIC
         }
-        return done(launch(ctx, Intent(action)), p.reply.ifBlank { "Opening ${p.value} settings." }, "I couldn't open settings.")
+        return try {
+            am.setStreamVolume(stream, Math.round(am.getStreamMaxVolume(stream) * pct / 100f), AudioManager.FLAG_SHOW_UI)
+            Outcome("Volume at $pct percent.")
+        } catch (e: Exception) {
+            Outcome("Android wouldn't let me change that volume.")
+        }
+    }
+
+    private fun ringer(ctx: Context, p: Plan): Outcome {
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val v = p.value.lowercase()
+        val mode = when {
+            v.startsWith("silent") -> AudioManager.RINGER_MODE_SILENT
+            v.startsWith("vib") -> AudioManager.RINGER_MODE_VIBRATE
+            else -> AudioManager.RINGER_MODE_NORMAL
+        }
+        return try {
+            am.ringerMode = mode
+            Outcome(when (mode) {
+                AudioManager.RINGER_MODE_SILENT -> "Silent mode on."
+                AudioManager.RINGER_MODE_VIBRATE -> "Vibrate mode on."
+                else -> "Sound is back on."
+            })
+        } catch (e: Exception) {
+            launch(ctx, Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+            Outcome("For that Android needs Do Not Disturb access. I opened the page. Switch Jarvis on, then ask me again.")
+        }
+    }
+
+    private fun brightness(ctx: Context, p: Plan): Outcome {
+        if (!Settings.System.canWrite(ctx)) {
+            launch(ctx, Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + ctx.packageName)))
+            return Outcome("I need permission to change brightness. I opened the page. Switch Jarvis on, then ask me again.")
+        }
+        return try {
+            val cr = ctx.contentResolver
+            val cur = Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS, 128)
+            val target = when (p.value) {
+                "up" -> cur + 70
+                "down" -> cur - 70
+                else -> (p.value.toIntOrNull() ?: return ask("What brightness, from 0 to 100?", p)) * 255 / 100
+            }.coerceIn(5, 255)
+            Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+            Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, target)
+            Outcome("Brightness at ${target * 100 / 255} percent.")
+        } catch (e: Exception) {
+            Outcome("Android wouldn't let me change the brightness.")
+        }
     }
 
     // ------------------------------------------------------------------ notes, notifications, briefing

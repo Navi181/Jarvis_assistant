@@ -52,6 +52,13 @@ class JarvisAccessibilityService : AccessibilityService() {
             "nfc" in t -> listOf("nfc")
             "dark" in t -> listOf("dark mode")
             "night" in t || "eye" in t -> listOf("eye comfort", "night light", "blue light")
+            "cast" in t || "mirror" in t -> listOf("smart view", "cast", "screen mirroring")
+            "record" in t -> listOf("screen recorder", "screen record")
+            "sync" in t -> listOf("auto sync", "sync")
+            "torch" in t || "flash" in t -> listOf("torch", "flashlight")
+            "always on" in t -> listOf("always on display")
+            "sound" in t || "silent" in t || "mute" in t -> listOf("sound", "mute", "vibrate")
+            "invert" in t || "color" in t -> listOf("color inversion", "invert colors")
             else -> listOf(t)
         }
     }
@@ -187,6 +194,8 @@ class JarvisAccessibilityService : AccessibilityService() {
         "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
         "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
         "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+        "power" -> performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+        "split" -> Build.VERSION.SDK_INT >= 24 && performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)
         "screenshot" -> Build.VERSION.SDK_INT >= 28 && performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
         "lock" -> Build.VERSION.SDK_INT >= 28 && performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
         else -> false

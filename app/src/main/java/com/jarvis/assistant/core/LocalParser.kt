@@ -30,6 +30,11 @@ object LocalParser {
         if (Regex("^(?:help|what can you do|what do you do|what are your (?:skills|features)|show (?:me )?(?:your )?skills)$").matches(t)) return Plan("help")
         if (Regex("\\b(?:good morning|morning briefing|daily briefing|brief me|my briefing|what(?:'s| is) my day)\\b").containsMatchIn(t)) return Plan("briefing")
 
+        // ---- go into depth on the last answer or any subject
+        if (Brain.wantsDetail(t) && !Regex("^(?:play|call|open|send|set|add|navigate|turn|remind|text|message)\\b").containsMatchIn(t)) {
+            return Plan("elaborate", target = t)
+        }
+
         // ---- flashlight
         if (Regex("\\b(flash ?light|torch)\\b").containsMatchIn(t)) {
             val v = when {
@@ -123,7 +128,7 @@ object LocalParser {
         convert(t)?.let { return it }
 
         // ---- on/off switches (done for you through the screen, not just opened)
-        val sw = "(wi-?fi|bluetooth|airplane mode|flight mode|hotspot|mobile data|data|location|gps|do not disturb|dnd|battery saver|power saving|auto rotate|nfc|dark mode|night light|eye comfort)"
+        val sw = "(wi-?fi|bluetooth|airplane mode|flight mode|hotspot|mobile hotspot|mobile data|data|location|gps|do not disturb|dnd|battery saver|power saving|auto rotate|screen rotation|rotation|nfc|dark mode|dark theme|night light|eye comfort|screen mirroring|smart view|cast|screen recorder|auto sync|sync|always on display|torch|invert colou?rs)"
         Regex("^(?:please )?(?:turn|switch|put|set)\\s+(on|off)\\s+(?:the |my )?$sw$").find(t)?.let {
             return Plan("toggle", target = it.groupValues[2], value = it.groupValues[1])
         }
@@ -144,6 +149,34 @@ object LocalParser {
         if (Regex("^(?:what(?:'s| is) on (?:my|the) screen|read (?:my|the|this) screen|(?:summari[sz]e|explain) (?:my |the |this )?screen)$").matches(t)) return Plan("screen_read")
         Regex("^(?:email|send (?:an )?email to|mail)\\s+(.+?)(?:\\s+(?:saying that|saying|that says|about|and say|to say)\\s+(.+))?$").find(t)?.let {
             return Plan("email", target = it.groupValues[1].trim(), message = it.groupValues[2].trim())
+        }
+
+        // ---- volume level, ringer mode, brightness, power menu
+        val td = Num.digitize(t)
+        Regex("(?:^|\\b)(?:set |put |turn |change )?(?:the )?(media |music |ring(?:er|tone)? |alarm |notification )?volume (?:to|at|on)\\s+(\\d{1,3})\\s*(?:%|percent)?").find(td)?.let {
+            return Plan("volume_set", target = it.groupValues[1].trim(), value = it.groupValues[2])
+        }
+        if (Regex("^(?:max(?:imum)?|full) volume$|^volume (?:to )?(?:max|full|maximum)$").matches(t)) return Plan("volume_set", value = "100")
+        Regex("^(?:please )?(?:put|set|switch|turn)?\\s*(?:my |the )?(?:phone )?(?:on |to |into )?(silent|vibrate|vibration|normal|sound|ring)(?: mode)?(?: on)?$").find(t)?.let {
+            return Plan("ringer", value = it.groupValues[1])
+        }
+        if (Regex("\\bbrightness\\b|\\b(?:dim|brighten)\\b|screen (?:brighter|dimmer)").containsMatchIn(td) && !td.contains("setting")) {
+            val n = Regex("(\\d{1,3})\\s*(?:%|percent)?").find(td)?.groupValues?.get(1)
+            val v = when {
+                n != null -> n
+                Regex("\\b(max|maximum|full|highest)\\b").containsMatchIn(td) -> "100"
+                Regex("\\b(min|minimum|lowest)\\b").containsMatchIn(td) -> "5"
+                Regex("\\b(up|increase|brighter|brighten|higher|raise)\\b").containsMatchIn(td) -> "up"
+                Regex("\\b(down|decrease|dim|dimmer|lower|reduce)\\b").containsMatchIn(td) -> "down"
+                else -> ""
+            }
+            return Plan("brightness", value = v)
+        }
+        if (Regex("^(?:show |open |pull down )?(?:the )?(?:power menu|shut ?down(?: the phone)?|power off|switch off the phone|restart(?: the phone)?|reboot)$").matches(t)) return Plan("global", value = "power")
+        if (Regex("^(?:show |open |pull down )(?:my |the )?notifications?(?: panel| shade| bar)?$").matches(t)) return Plan("global", value = "notifications")
+        if (Regex("^(?:toggle |turn on |start )?split ?screen$").matches(t)) return Plan("global", value = "split")
+        Regex("^(?:open|show|go to|take me to)\\s+(?:the |my )?(.+?)\\s+settings$").find(t)?.let {
+            return Plan("settings", value = it.groupValues[1].trim())
         }
 
         // ---- quick settings, volume, info

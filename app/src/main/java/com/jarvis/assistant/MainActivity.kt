@@ -13,11 +13,64 @@ import com.jarvis.assistant.core.Assistant
 import com.jarvis.assistant.core.FocusLock
 import com.jarvis.assistant.core.Prefs
 import com.jarvis.assistant.core.Updater
+import com.jarvis.assistant.core.Phase
 import com.jarvis.assistant.ui.JarvisUi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var wakeSession = false
+    private val uiScope = CoroutineScope(Dispatchers.Main)
+    private var phaseJob: Job? = null
+
+    /** Opened by the wake word while the phone is locked: show above the lock screen (it never unlocks the phone), then step away. */
+    private fun applyWake(i: Intent?) {
+        if (i?.getBooleanExtra("fromWake", false) != true) return
+        wakeSession = true
+        if (android.os.Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+    }
+
+    private fun endWake() {
+        wakeSession = false
+        if (android.os.Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(false)
+            setTurnScreenOn(false)
+        }
+        moveTaskToBack(true)
+    }
+
+    override fun onDestroy() {
+        phaseJob?.cancel()
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyWake(intent)
+        phaseJob = uiScope.launch {
+            var seen = false
+            Assistant.phase.collect { ph ->
+                if (wakeSession) {
+                    if (ph != Phase.IDLE) seen = true
+                    else if (seen) {
+                        seen = false
+                        delay(1800)
+                        if (Assistant.phase.value == Phase.IDLE && wakeSession) endWake()
+                    }
+                }
+            }
+        }
         enableEdgeToEdge()
         // During a focus session the back button does nothing.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -46,6 +99,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        applyWake(intent)
         handle(intent)
     }
 

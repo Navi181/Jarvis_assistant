@@ -10,6 +10,20 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.app.KeyguardManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import android.os.PowerManager
+import com.jarvis.assistant.core.Phase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -64,6 +78,9 @@ class WakeWordService : Service() {
     private var lastWake = 0L
     private var google: android.speech.SpeechRecognizer? = null
     private var googleOn = false
+    private var wakeLock: PowerManager.WakeLock? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var phaseJob: Job? = null
 
     // Heard "Jarvis", or a close mishearing of it.
     // The small offline model doesn't know the word "Jarvis", so it writes down what it sounds like.
@@ -96,6 +113,19 @@ class WakeWordService : Service() {
             return START_NOT_STICKY
         }
         running = true
+        // keep listening with the screen off / phone locked
+        try {
+            if (wakeLock == null) {
+                wakeLock = getSystemService(PowerManager::class.java)
+                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jarvis:wake").apply { setReferenceCounted(false); acquire() }
+            }
+        } catch (_: Exception) {
+        }
+        // the notification orb glows orange while Jarvis wants you to speak
+        phaseJob?.cancel()
+        phaseJob = scope.launch {
+            Assistant.phase.collect { ph -> getSystemService(NotificationManager::class.java).notify(NOTIF_ID, notification(phaseText(ph), ph)) }
+        }
         Assistant.onMicNeeded = { handler.post { stopWake() } }
         Assistant.onMicFree = { handler.postDelayed({ if (running && porcupine == null && vosk == null && !googleOn) beginWake() }, 500) }
         return START_STICKY
@@ -249,12 +279,29 @@ class WakeWordService : Service() {
                 ToneGenerator(AudioManager.STREAM_MUSIC, 70).startTone(ToneGenerator.TONE_PROP_BEEP, 120)
             } catch (_: Exception) {
             }
+            // locked or screen off: light the screen and show the orb above the lock screen (it never unlocks the phone)
+            try {
+                val locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked ||
+                    !getSystemService(PowerManager::class.java).isInteractive
+                if (locked) {
+                    startActivity(
+                        Intent(this, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                            .putExtra("fromWake", true)
+                    )
+                }
+            } catch (_: Exception) {
+            }
             Assistant.listen() // the mic hooks below pause/resume wake-word detection around the conversation
         }
     }
 
     override fun onDestroy() {
         running = false
+        phaseJob?.cancel()
+        scope.cancel()
+        try { wakeLock?.release() } catch (_: Exception) {}
+        wakeLock = null
         Assistant.onMicNeeded = null
         Assistant.onMicFree = null
         handler.removeCallbacksAndMessages(null)
@@ -269,10 +316,36 @@ class WakeWordService : Service() {
 
     // ------------------------------------------------------------------ notification
 
-    private fun notification(text: String): Notification {
+    private fun phaseText(ph: Phase) = when (ph) {
+        Phase.LISTENING -> "Listening… speak now"
+        Phase.THINKING -> "Thinking…"
+        Phase.SPEAKING -> "Speaking…"
+        Phase.IDLE -> "Say “Jarvis” to wake me"
+    }
+
+    /** The glowing orb shown in the notification (and on the lock screen): orange when it wants you to speak. */
+    private fun orbBitmap(active: Boolean): Bitmap {
+        val size = 160
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val mid = if (active) 0xFFFFA630.toInt() else 0xFF4FA3D1.toInt()
+        val edge = if (active) 0xFFFF5A00.toInt() else 0xFF123A5E.toInt()
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.shader = RadialGradient(
+            size / 2f, size / 2f, size / 2f,
+            intArrayOf(0xFFFFFFFF.toInt(), mid, edge, 0x00000000),
+            floatArrayOf(0f, 0.35f, 0.78f, 1f), Shader.TileMode.CLAMP
+        )
+        c.drawCircle(size / 2f, size / 2f, size / 2f, p)
+        return bmp
+    }
+
+    private fun notification(text: String, ph: Phase = Phase.IDLE): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Hands-free", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, "Hands-free", NotificationManager.IMPORTANCE_LOW).apply {
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
         )
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -280,11 +353,14 @@ class WakeWordService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(orbBitmap(ph == Phase.LISTENING))
+            .setColor(if (ph == Phase.LISTENING) 0xFFFF9F1C.toInt() else 0xFF4FA3D1.toInt())
             .setContentTitle("Jarvis")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
             .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }

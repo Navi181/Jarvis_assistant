@@ -273,7 +273,7 @@ object Assistant {
         phase.value = Phase.SPEAKING
         val t = tts
         if (t != null && ttsReady) {
-            val say = SpeechText.clean(text)
+            val say = SpeechText.clean(text).let { SpeechText.limit(it, 2400) }
             if (!(Prefs.deepVoice && speakDeep(t, say))) t.speak(say, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
         } else {
             main.postDelayed({ afterSpeech() }, 1200)

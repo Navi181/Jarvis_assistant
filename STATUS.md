@@ -44,7 +44,12 @@
 | H8 | Keyboard typing now visible (roomier input, less clutter), small orange listening orb over other apps, "Set as default assistant" via Android role request, deeper man voice (pitch-shifted), real Bluetooth/Wi-Fi toggles, screen reading, memory, personality/length/language settings, any-chapter tutor, voice-set calendar events | DONE (not yet built in cloud) |
 | H9a | Voice reads codes and numbers digit by digit (flight 6E6770 → "6 E 6 7 7 0"), drops markdown symbols and links when speaking | DONE (not yet built in cloud) |
 
-### Plan for the next requests (each is its own small block)
+| H9b | Long answers on request: "elaborate / in detail / tell me more / full story" gives a full ~350 word answer (web-grounded, remembers the conversation); short stays the default | DONE (not yet built in cloud) |
+| H9c | Any factual question goes to a live web answer; follow-ups ("what about him?") use the conversation; answer length follows your setting | DONE (not yet built in cloud) |
+| H9d | More phone control: exact volume %, silent/vibrate, brightness, power menu, notifications panel, split screen, ~30 settings pages, more quick-settings tiles | DONE (not yet built in cloud) |
+| H9e | Listens with screen off/locked (wake lock), glowing orb in the notification (orange when listening), wake word lights the screen and shows Jarvis above the lock screen without unlocking | DONE (not yet built in cloud) |
+
+### (old plan, now built) (each is its own small block)
 - H9b: Long answers on request: "elaborate / explain in detail / tell me more" gives a full answer (news: full story list, then drill into any item); short stays the default for quick questions
 - H9c: Answer anything: web-grounded answers for any topic, step-by-step explanations, follow-up memory in the conversation
 - H9d: Control everything: more toggles (flashlight, DND, hotspot, brightness, volume, airplane, rotation, location) through quick settings + settings pages, open any app/setting, system actions

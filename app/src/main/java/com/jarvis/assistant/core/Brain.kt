@@ -68,12 +68,17 @@ action must be one of:
 - maps (target = what to find on the map, e.g. "pharmacy near me")
 - search (target = web search query)
 - weather (target = city, or "" for the user's home city)
+- global (value = back | home | recents | notifications | quick_settings | screenshot | lock | power | split; needs Accessibility)
+- volume_set (value = 0-100, target = media | ring | alarm | notification)
+- ringer (value = silent | vibrate | normal)
+- brightness (value = up | down | 0-100)
 - flashlight (value = on | off)
 - volume (value = up | down | mute)
-- settings (value = wifi | bluetooth | airplane | hotspot | display | sound | battery | location)
+- settings (opens a settings page: value = wifi | bluetooth | airplane | hotspot | display | sound | battery | location | nfc | storage | date | language | accessibility | privacy | security | data usage | vpn | cast | developer | default apps | keyboard | about | sync | apps | notifications | wallpaper)
 - note_add (message = the note)
 - note_read
-- web_answer (target = the question; use for anything needing live or recent facts: sports results, news, prices, "who is the current ...")
+- web_answer (target = the question; use for ANY factual or knowledge question: science, history, people, places, sport, news, prices, health, law, how-to, definitions, "who is ...", "what is ...", "why ...". target must be a complete standalone question: replace words like "it", "that", "he" using the conversation so far)
+- elaborate (target = what to go into depth on, or "" for your previous answer; use when the user says elaborate, in detail, tell me more, explain fully, full story, deep dive, or asks about one part of an earlier answer)
 - toggle (target = wifi | bluetooth | hotspot | etc, value = on | off)
 - phone_do (target = the whole task in plain words; use for ANY job on the phone that no other action covers, in any app: toggling a setting, ordering, replying inside an app, checking something in an app. You will look at the screen and tap through it)
 - shop (target = item, value = amazon | flipkart; opens the store search)
@@ -87,7 +92,7 @@ action must be one of:
 - update (check for and install a new version of this app)
 - camera (value = "selfie" or "")
 - notifications (read the user's notifications aloud)
-- answer (no device action; just answer or chat in "reply")
+- answer (ONLY for greetings, chit-chat, opinions and questions you must ask the user; never for facts)
 Unused keys: "" for text, -1 for hour, 0 for minute and seconds.
 "reply": for device actions, a short confirmation in your own voice. For "answer", the actual answer.
 If a needed detail is missing (who to call, what time), use action "answer" and ask one short question in "reply".
@@ -144,7 +149,31 @@ Current date and time: ${now()}
     // ------------------------------------------------------------------ direct answers & tutoring (plain text)
 
     /** Live facts answered directly (Gemini with Google Search, or Groq's built-in web search). No links. */
+    fun wantsDetail(q: String): Boolean = Regex(
+        "(?i)\\b(in detail|detailed|in depth|in full|elaborate|more details?|full details?|full (?:story|news|report)|tell me more|go deeper|deep dive|at length|explain (?:it )?(?:more|further|properly|fully)|everything about)\\b"
+    ).containsMatchIn(q)
+
+    private fun recentContext(): String = Assistant.messages.value.takeLast(8)
+        .joinToString("\n") { (if (it.fromUser) "User: " else "Jarvis: ") + it.text.take(700) }
+
+    /** A full, spoken-style explanation (about 350 words), grounded in live web results. Remembers the conversation. */
+    fun elaborate(topic: String): String {
+        val ask = topic.ifBlank { "Tell me more about your last answer, in detail." }
+        if (!Prefs.hasAnyKey) {
+            return clean(Fallback.answer(ask).orEmpty()).ifBlank { "For long answers I need a free Gemini or Groq key. You can add it in setup." }
+        }
+        return text(
+            "You are JARVIS. Today is ${now()}. The user wants a thorough, well explained answer. Use up-to-date web information. " +
+                "Cover the whole subject in order, with the key facts, numbers, names and dates, in about 300 to 400 words of short spoken paragraphs. " +
+                "Plain text only: no markdown, no bullet symbols, no links, no sources. " +
+                "If the request says it, that, or the news, work out the subject from the conversation below. " +
+                "Reply in ${langName()}.",
+            "Conversation so far:\n${recentContext()}\n\nRequest: $ask", true, ask
+        )
+    }
+
     fun webAnswer(question: String): String {
+        if (wantsDetail(question)) return elaborate(question)
         // news is fetched straight from Google News: faster and always current
         if (Regex("\\b(news|headlines)\\b", RegexOption.IGNORE_CASE).containsMatchIn(question)) {
             val quick = clean(Fallback.answer(question).orEmpty())
@@ -154,9 +183,10 @@ Current date and time: ${now()}
     }
 
     private fun webAnswerAi(question: String): String = text(
-        "You are JARVIS. Today is ${now()}. Answer the question directly with the actual fact (winner, score, number, name) in at most 2 short spoken sentences. " +
-            "Use up-to-date web information. Never give links, sources or markdown. If you truly can't find it, say so briefly.",
-        question, true
+        "You are JARVIS. Today is ${now()}. Answer the question directly, starting with the actual answer (winner, score, number, name, explanation), in ${lengthLine()}. " +
+                "Use up-to-date web information for anything that can change; for settled knowledge answer fully and correctly. Never give links, sources or markdown. " +
+                "Say the user can ask you to elaborate if there is more. If you truly can't find it, say so briefly.",
+        "Conversation so far:\n${recentContext()}\n\nQuestion: $question", true, question
     )
 
     fun screenSummary(pkg: String, text: String): String = text(
@@ -192,12 +222,12 @@ Current date and time: ${now()}
         "Request: ${ask.ifBlank { "Tell me what is on my screen and summarise it." }}\nScreen:\n$screen", false
     )
 
-    private fun text(system: String, user: String, search: Boolean): String {
-        if (!Prefs.hasAnyKey) return (if (search) clean(Fallback.answer(user).orEmpty()) else "").ifBlank { "I need a free Gemini or Groq key for that. You can add it in setup." }
+    private fun text(system: String, user: String, search: Boolean, fb: String = user): String {
+        if (!Prefs.hasAnyKey) return (if (search) clean(Fallback.answer(fb).orEmpty()) else "").ifBlank { "I need a free Gemini or Groq key for that. You can add it in setup." }
         return try {
             clean(Llm.answer(system, user, search))
         } catch (e: LlmFailure) {
-            (if (search) clean(Fallback.answer(user).orEmpty()) else "").ifBlank { friendly(e) }
+            (if (search) clean(Fallback.answer(fb).orEmpty()) else "").ifBlank { friendly(e) }
         } catch (e: Exception) {
             "Sorry, I couldn't work that out."
         }
