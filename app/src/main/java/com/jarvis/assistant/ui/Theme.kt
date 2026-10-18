@@ -14,10 +14,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-val Bg = Color(0xFF000206)
-val BgDeep = Color(0xFF010510)
-val Panel = Color(0xFF060B15)
-val Outline = Color(0xFF111A2A)
+val Bg = Color(0xFF02050C)
+val BgDeep = Color(0xFF050B18)
+val Panel = Color(0xFF0A1220)
+val Outline = Color(0xFF1A2639)
 val Ink = Color(0xFFE6F1FF)
 val InkDim = Color(0xFF8CA3BF)
 val Cyan = Color(0xFF22D3EE)
@@ -34,7 +34,7 @@ private val scheme = darkColorScheme(
     onBackground = Ink,
     surface = Panel,
     onSurface = Ink,
-    surfaceVariant = Color(0xFF080E19),
+    surfaceVariant = Color(0xFF0E1726),
     onSurfaceVariant = InkDim,
     outline = Outline
 )

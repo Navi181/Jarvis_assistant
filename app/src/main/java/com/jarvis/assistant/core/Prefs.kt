@@ -50,15 +50,6 @@ object Prefs {
         get() = sp.getBoolean("deepVoice", true)
         set(v) = sp.edit().putBoolean("deepVoice", v).apply()
 
-    /** Speak with Gemini's deep British male voice when online (the phone voice is the backup). */
-    var aiVoice: Boolean
-        get() = sp.getBoolean("aiVoice", true)
-        set(v) = sp.edit().putBoolean("aiVoice", v).apply()
-
-    var aiVoiceName: String
-        get() = str("aiVoiceName")
-        set(v) = put("aiVoiceName", v)
-
     var voiceRate: Float
         get() = sp.getFloat("voiceRate2", 0.92f)
         set(v) = sp.edit().putFloat("voiceRate2", v).apply()

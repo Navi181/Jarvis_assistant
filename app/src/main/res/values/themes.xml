@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="jarvis_bg">#FF000206</color>
-    <color name="ic_launcher_background">#FF000206</color>
+    <color name="jarvis_bg">#FF02050C</color>
+    <color name="ic_launcher_background">#FF02050C</color>
 
     <style name="Theme.Jarvis" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/jarvis_bg</item>

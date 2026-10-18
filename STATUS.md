@@ -49,8 +49,6 @@
 | H9d | More phone control: exact volume %, silent/vibrate, brightness, power menu, notifications panel, split screen, ~30 settings pages, more quick-settings tiles | DONE (not yet built in cloud) |
 | H9e | Listens with screen off/locked (wake lock), glowing orb in the notification (orange when listening), wake word lights the screen and shows Jarvis above the lock screen without unlocking | DONE (not yet built in cloud) |
 
-| H10 | New cooler icon (HUD orb with ticks and arcs), darker theme, listening orb over other apps is now the real in-app orb (smaller), "Jarvis voice": deep British male speech from Gemini (Charon etc., Next voice cycles them) with the phone voice as backup | DONE (not yet built in cloud) |
-
 ### (old plan, now built) (each is its own small block)
 - H9b: Long answers on request: "elaborate / explain in detail / tell me more" gives a full answer (news: full story list, then drill into any item); short stays the default for quick questions
 - H9c: Answer anything: web-grounded answers for any topic, step-by-step explanations, follow-up memory in the conversation

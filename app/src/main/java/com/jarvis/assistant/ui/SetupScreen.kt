@@ -316,11 +316,6 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     PrimaryButton("Test") { Assistant.previewVoice() }
                 }
                 if (label.isNotBlank()) Text(label, color = InkDim, fontSize = 13.sp)
-                var ai by remember { mutableStateOf(Prefs.aiVoice) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Jarvis voice: deep British man (online, uses your Gemini key)", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    androidx.compose.material3.Switch(checked = ai, onCheckedChange = { ai = it; Prefs.aiVoice = it; Assistant.previewVoice() })
-                }
                 var deep by remember { mutableStateOf(Prefs.deepVoice) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Deep male voice (works with any phone voice)", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
