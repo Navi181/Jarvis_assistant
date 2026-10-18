@@ -15,12 +15,12 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.ViewTreeLifecycleOwner
-import androidx.lifecycle.ViewTreeViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.jarvis.assistant.core.Assistant
 import com.jarvis.assistant.core.Phase
 import com.jarvis.assistant.core.Prefs
@@ -86,9 +86,9 @@ object ListenOrb {
             lp.y = (density * 48).toInt()
             val o = Owner().also { it.start() }
             val v = ComposeView(ctx)
-            ViewTreeLifecycleOwner.set(v, o)
-            ViewTreeViewModelStoreOwner.set(v, o)
-            ViewTreeSavedStateRegistryOwner.set(v, o)
+            v.setViewTreeLifecycleOwner(o)
+            v.setViewTreeViewModelStoreOwner(o)
+            v.setViewTreeSavedStateRegistryOwner(o)
             v.setContent {
                 val phase by Assistant.phase.collectAsState()
                 val level by Assistant.level.collectAsState()
