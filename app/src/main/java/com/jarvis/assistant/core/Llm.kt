@@ -276,6 +276,21 @@ object Llm {
         }
     }
 
+    /** Question about a video / photo / audio / PDF (Gemini only). [parts] holds file_data / text parts. */
+    fun askWithMedia(system: String, parts: JSONArray): String {
+        val key = Prefs.keyFor("gemini")
+        if (key.isBlank()) throw LlmFailure(LlmFailure.Kind.NO_KEY, "gemini")
+        val body = JSONObject()
+            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+            .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
+        try {
+            return geminiText(geminiCall(key, body))
+        } catch (e: IOException) {
+            lastProblem = "Gemini: " + e.message.orEmpty().replace(Regex("\\s+"), " ").take(160)
+            throw classify("gemini", e)
+        }
+    }
+
     // ------------------------------------------------------------------ Groq
 
     private fun groqPost(key: String, body: JSONObject): String {

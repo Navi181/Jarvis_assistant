@@ -505,27 +505,71 @@ object Actions {
         }
         if (pkg.isEmpty() || !installed(ctx, pkg)) return Outcome("I couldn't find $name on this phone.")
 
-        val search = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
-            .setPackage(pkg)
-            .putExtra(SearchManager.QUERY, q)
-            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+        // "X by Y" is a structured song search; anything else is a plain query
+        val by = Regex("^(.+?)\\s+by\\s+(.+)$", RegexOption.IGNORE_CASE).find(q)
+        val search = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).setPackage(pkg).putExtra(SearchManager.QUERY, q)
+        if (by != null) {
+            search.putExtra(MediaStore.EXTRA_MEDIA_FOCUS, MediaStore.Audio.Media.ENTRY_CONTENT_TYPE)
+                .putExtra(MediaStore.EXTRA_MEDIA_TITLE, by.groupValues[1].trim())
+                .putExtra(MediaStore.EXTRA_MEDIA_ARTIST, by.groupValues[2].trim())
+        } else {
+            search.putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+        }
         var ok = launch(ctx, search)
         if (!ok && platform == "spotify") ok = launch(ctx, Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:" + Uri.encode(q))).setPackage(pkg))
         if (!ok) ok = ctx.packageManager.getLaunchIntentForPackage(pkg)?.let { launch(ctx, it) } ?: false
-        if (ok) {
-            // some apps open on the song but wait to be told to start: send Play a few seconds later
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                try {
-                    val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    if (!am.isMusicActive) {
-                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
-                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
-                    }
-                } catch (_: Exception) {
+        if (ok) makeItPlay(ctx, pkg, q)
+        val canPress = com.jarvis.assistant.system.JarvisAccessibilityService.instance != null || JarvisNotificationListener.connected
+        val hint = if (ok && !canPress) " If it only shows search results, switch on Jarvis in Accessibility settings and I'll press play for you." else ""
+        return done(ok, p.reply.ifBlank { "Playing $q on $name." } + hint, "I couldn't open $name.")
+    }
+
+    /**
+     * Music apps often open on the song but wait to be told to start, or land on search results.
+     * A few seconds later: ask the app's own media session to play the search, else tap the top result and press play.
+     */
+    private fun makeItPlay(ctx: Context, pkg: String, q: String) {
+        Thread {
+            try {
+                val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                Thread.sleep(3800)
+                if (am.isMusicActive) return@Thread
+                if (viaSession(ctx, pkg, q)) {
+                    Thread.sleep(2500)
+                    if (am.isMusicActive) return@Thread
                 }
-            }, 4000)
-        }
-        return done(ok, p.reply.ifBlank { "Playing $q on $name." }, "I couldn't open $name.")
+                val svc = com.jarvis.assistant.system.JarvisAccessibilityService.instance
+                if (svc != null) {
+                    for (attempt in 0 until 3) {
+                        if (am.isMusicActive) return@Thread
+                        if (svc.tapFirstResult(pkg, q)) {
+                            Thread.sleep(2600)
+                            if (!am.isMusicActive) svc.tapPlay(pkg)
+                            Thread.sleep(1200)
+                            break
+                        }
+                        Thread.sleep(1500)
+                    }
+                }
+                if (!am.isMusicActive) {
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                }
+            } catch (_: Exception) {
+            }
+        }.start()
+    }
+
+    /** Needs notification access (already used for reading notifications aloud); quietly false without it. */
+    private fun viaSession(ctx: Context, pkg: String, q: String): Boolean = try {
+        val msm = ctx.getSystemService(Context.MEDIA_SESSION_SERVICE) as android.media.session.MediaSessionManager
+        val c = msm.getActiveSessions(android.content.ComponentName(ctx, JarvisNotificationListener::class.java)).firstOrNull { it.packageName == pkg }
+        if (c != null) {
+            c.transportControls.playFromSearch(q, android.os.Bundle())
+            true
+        } else false
+    } catch (e: Exception) {
+        false
     }
 
     /** Works with any music / video app, no permission needed. */

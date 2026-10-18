@@ -45,6 +45,9 @@ object Assistant {
     val partial = MutableStateFlow("")        // live transcript while you speak
     val messages = MutableStateFlow<List<Msg>>(emptyList())
 
+    /** A video / photo / audio / PDF attached to the chat; every question (typed or spoken) is about it until removed. */
+    val media = MutableStateFlow<MediaAsk.Attachment?>(null)
+
     /** The wake-word service sets these so only one thing owns the microphone at a time. */
     @Volatile var onMicNeeded: (() -> Unit)? = null
     @Volatile var onMicFree: (() -> Unit)? = null
@@ -250,9 +253,60 @@ object Assistant {
 
     // ---------------------------------------------------------------- thinking + acting
 
+    fun attach(a: MediaAsk.Attachment?) {
+        MediaAsk.forget()
+        media.value = a
+    }
+
+    /** Ask about the attached file. A blank question gets a general description. */
+    fun submitMedia(question: String) {
+        val a = media.value ?: return
+        if (phase.value == Phase.LISTENING || phase.value == Phase.THINKING) return
+        stopSpeech()
+        followUps = 0
+        onMicNeeded?.invoke()
+        handle(question.ifBlank { MediaAsk.defaultQuestion(a) })
+    }
+
+    private fun mediaClear(text: String) =
+        Regex("^(?:please )?(?:remove|clear|forget|close|detach|delete|drop|stop using)(?: about)? (?:the |this |that )?(?:video|photo|picture|image|attachment|file|clip|pdf|audio)\\b.*").matches(text.lowercase().trim())
+
+    private fun handleMedia(a: MediaAsk.Attachment, text: String) {
+        if (mediaClear(text)) {
+            attach(null)
+            messages.value = (messages.value + Msg(true, text)).takeLast(30)
+            pending = null
+            respond("Done, I've let go of the ${a.kind}.", false)
+            return
+        }
+        messages.value = (messages.value + Msg(true, text)).takeLast(30)
+        phase.value = Phase.THINKING
+        pending = null
+        job?.cancel()
+        job = scope.launch {
+            val reply = try {
+                kotlinx.coroutines.withContext(Dispatchers.IO) { MediaAsk.analyze(app, a, text, Brain.wantsDetail(text)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                MediaAsk.friendly(e)
+            }
+            respond(reply, false)
+        }
+    }
+
     private fun handle(text: String) {
         partial.value = ""
         level.value = 0f
+        val attached = media.value
+        if (attached != null && pending == null) {
+            // questions go to the attached file; clear device commands ("call mom", "set a timer") still work as usual
+            val device = LocalParser.parse(text)?.action
+            if (device == null || device in setOf("answer", "elaborate", "web_answer") || mediaClear(text)) {
+                handleMedia(attached, text)
+                return
+            }
+        }
         val history = messages.value.takeLast(6)
         messages.value = (messages.value + Msg(true, text)).takeLast(30)
         phase.value = Phase.THINKING

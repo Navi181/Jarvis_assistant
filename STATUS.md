@@ -58,3 +58,4 @@
 - H9c: Answer anything: web-grounded answers for any topic, step-by-step explanations, follow-up memory in the conversation
 - H9d: Control everything: more toggles (flashlight, DND, hotspot, brightness, volume, airplane, rotation, location) through quick settings + settings pages, open any app/setting, system actions
 - H9e: Always-listening: foreground service with a glowing orb notification and wake word while screen is locked (Android limits mic access when the phone is fully off; a locked phone works, a powered-off phone cannot)
+- H12: Songs actually start (structured "X by Y" search, then the app's own media session, then tap top result + Play via Accessibility); attach video / photo / audio / PDF in the chat (paperclip) and ask about it by typing or voice, uploaded once to Gemini's file store (needs a Gemini key). DONE (not yet built in cloud)

@@ -57,6 +57,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
@@ -91,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.jarvis.assistant.core.Assistant
+import com.jarvis.assistant.core.MediaAsk
 import com.jarvis.assistant.core.Msg
 import com.jarvis.assistant.core.Phase
 import com.jarvis.assistant.core.Prefs
@@ -112,6 +115,7 @@ fun MainScreen(onSettings: () -> Unit) {
     val level by Assistant.level.collectAsState()
     val partial by Assistant.partial.collectAsState()
     val msgs by Assistant.messages.collectAsState()
+    val media by Assistant.media.collectAsState()
     var handsFree by remember { mutableStateOf(Prefs.handsFree) }
     var typed by remember { mutableStateOf("") }
     // While the keyboard is up, the orb shrinks and everything else steps aside so you can see what you type.
@@ -125,9 +129,23 @@ fun MainScreen(onSettings: () -> Unit) {
 
     fun sendTyped() {
         val t = typed.trim()
-        if (t.isNotEmpty()) {
+        if (media != null) {
+            Assistant.submitMedia(t)
+            typed = ""
+        } else if (t.isNotEmpty()) {
             Assistant.submit(t)
             typed = ""
+        }
+    }
+
+    // attach a video, photo, audio clip or PDF from the phone
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                Assistant.attach(MediaAsk.describe(ctx, uri))
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "I couldn't open that file.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -244,6 +262,31 @@ fun MainScreen(onSettings: () -> Unit) {
                 }
             }
 
+            // the attached file, with a cross to let go of it
+            media?.let { a ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Cyan.copy(alpha = 0.10f))
+                        .border(1.dp, Cyan.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                        .padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.AttachFile, contentDescription = null, tint = Cyan, modifier = Modifier.size(18.dp))
+                    Text(
+                        "${a.name}  ·  ask me about this ${a.kind}",
+                        color = Ink, fontSize = 13.sp, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(start = 8.dp)
+                    )
+                    IconButton(onClick = { Assistant.attach(null) }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Remove attachment", tint = InkDim, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
             // keyboard: one soft rounded box, the text inside it, a round send button on the right
             val boxShape = RoundedCornerShape(26.dp)
             Row(
@@ -253,9 +296,18 @@ fun MainScreen(onSettings: () -> Unit) {
                     .clip(boxShape)
                     .background(Panel)
                     .border(1.dp, if (focused) Cyan.copy(alpha = 0.55f) else Outline, boxShape)
-                    .padding(start = 18.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                    .padding(start = 6.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable { pickFile.launch(arrayOf("video/*", "image/*", "audio/*", "application/pdf")) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.AttachFile, contentDescription = "Attach a video, photo or file", tint = if (media != null) Cyan else InkDim)
+                }
                 BasicTextField(
                     value = typed,
                     onValueChange = { typed = it },
@@ -264,10 +316,10 @@ fun MainScreen(onSettings: () -> Unit) {
                     maxLines = 5,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { sendTyped() }),
-                    modifier = Modifier.weight(1f).heightIn(min = 40.dp).padding(vertical = 8.dp).onFocusChanged { focused = it.isFocused },
+                    modifier = Modifier.weight(1f).heightIn(min = 40.dp).padding(start = 6.dp, top = 8.dp, bottom = 8.dp).onFocusChanged { focused = it.isFocused },
                     decorationBox = { inner ->
                         Box(contentAlignment = Alignment.CenterStart) {
-                            if (typed.isEmpty()) Text("Message Jarvis…", color = InkDim, fontSize = 17.sp)
+                            if (typed.isEmpty()) Text(if (media != null) "Ask about this ${media?.kind}…" else "Message Jarvis…", color = InkDim, fontSize = 17.sp)
                             inner()
                         }
                     }
@@ -277,11 +329,11 @@ fun MainScreen(onSettings: () -> Unit) {
                         .padding(start = 6.dp)
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (typed.isNotBlank()) Cyan else Outline)
-                        .clickable(enabled = typed.isNotBlank()) { sendTyped() },
+                        .background(if (typed.isNotBlank() || media != null) Cyan else Outline)
+                        .clickable(enabled = typed.isNotBlank() || media != null) { sendTyped() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.ArrowUpward, contentDescription = "Send", tint = if (typed.isNotBlank()) Bg else InkDim)
+                    Icon(Icons.Rounded.ArrowUpward, contentDescription = "Send", tint = if (typed.isNotBlank() || media != null) Bg else InkDim)
                 }
             }
 

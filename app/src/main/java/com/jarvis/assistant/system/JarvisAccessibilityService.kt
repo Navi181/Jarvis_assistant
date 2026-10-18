@@ -172,6 +172,47 @@ class JarvisAccessibilityService : AccessibilityService() {
 
     fun click(item: Item): Boolean = tapAncestor(item.node) || tapAt(item.node)
 
+    private fun topOf(n: AccessibilityNodeInfo): Int {
+        val r = android.graphics.Rect()
+        n.getBoundsInScreen(r)
+        return r.top
+    }
+
+    /**
+     * A music app has just opened on its search results. Tap the first real result (the top song) so it starts.
+     * Returns true if something was tapped.
+     */
+    fun tapFirstResult(pkg: String, query: String): Boolean {
+        val (p, list) = items()
+        if (p != pkg || list.isEmpty()) return false
+        val minTop = resources.displayMetrics.heightPixels * 0.17
+        val chips = setOf(
+            "songs", "artists", "albums", "playlists", "podcasts", "podcasts & shows", "shows", "profiles", "genres", "genres & moods",
+            "all", "music", "search", "cancel", "clear", "back", "top result", "videos", "audiobooks", "lyrics", "more", "filter"
+        )
+        val q = query.lowercase().trim()
+        val words = q.split(Regex("[^a-z0-9]+")).filter { it.length >= 3 }
+        val onResults = list.any { it.label.lowercase() in setOf("songs", "artists", "top result", "albums", "playlists") }
+        val cands = list.filter { it.label.isNotBlank() && !it.node.isEditable }
+            .filter { !it.node.className?.toString().orEmpty().contains("EditText") }
+            .filter { it.node.isClickable || it.node.parent?.isClickable == true }
+            .filter { topOf(it.node) > minTop }
+            .filter { it.label.lowercase().trim() !in chips && it.label.lowercase().trim() != q }
+            .sortedBy { topOf(it.node) }
+        val pick = cands.firstOrNull { c -> words.isNotEmpty() && words.any { it in c.label.lowercase() } }
+            ?: if (onResults) cands.firstOrNull() else null
+        return pick?.let { click(it) } ?: false
+    }
+
+    /** Taps a Play / Resume button if the app in front shows one. */
+    fun tapPlay(pkg: String): Boolean {
+        val (p, list) = items()
+        if (p != pkg) return false
+        val re = Regex("^(?:play|resume|play all|shuffle play|play now)$", RegexOption.IGNORE_CASE)
+        val hit = list.firstOrNull { re.matches(it.label.trim()) && (it.node.isClickable || it.node.parent?.isClickable == true) } ?: return false
+        return click(hit)
+    }
+
     fun type(item: Item, text: String, submit: Boolean): Boolean {
         item.node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = android.os.Bundle()
