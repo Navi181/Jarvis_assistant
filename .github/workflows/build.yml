@@ -5,10 +5,16 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * 1"
+    - cron: "0 3 * * 1"   # every Monday: rebuild and re-test so breakage from library changes is caught early
 
 permissions:
   contents: write
+
+# Two pushes in a row (your upload, then the auto-unpack) used to publish at the same moment
+# and delete each other's release. Now they take turns.
+concurrency:
+  group: build-jarvis
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -16,22 +22,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show what is being built
+        run: |
+          echo "Latest commits:"; git log -3 --format='%h %s (%cr)'
+          echo "Zips waiting in the repo root:"; ls ./*.zip 2>/dev/null || echo "none"
+          P=app/src/main/java/com/jarvis/assistant/core
+          echo "Prefs has aiVoice: $(grep -c aiVoice $P/Prefs.kt) | Extras.kt exists: $(test -f $P/Extras.kt && echo yes || echo NO) | GeminiTts uses Extras: $(grep -c 'Extras\.' $P/GeminiTts.kt)"
+
+      # An upload starts two runs: one right away (the zip is not unpacked yet, so it would build the OLD files)
+      # and one after the unpack. The first one now steps aside so only the real build counts.
+      - name: Is an update zip still waiting?
+        id: zipcheck
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && ls ./*.zip >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "An update zip is waiting to be unpacked. The build after the unpack will run instead."
+          fi
+
       - uses: actions/setup-java@v4
+        if: steps.zipcheck.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.zipcheck.outputs.skip != 'true'
 
       - name: Point updater at this repository
+        if: steps.zipcheck.outputs.skip != 'true'
         run: sed -i "s#OWNER/REPO#${{ github.repository }}#" app/src/main/java/com/jarvis/assistant/core/Updater.kt
 
       - name: Run tests
+        if: steps.zipcheck.outputs.skip != 'true'
         run: |
           chmod +x gradlew
           ./gradlew testDebugUnitTest --stacktrace
 
       - name: Load signing key
+        if: steps.zipcheck.outputs.skip != 'true'
         env:
           KS_B64: ${{ secrets.JARVIS_KEYSTORE_B64 }}
         run: |
@@ -47,18 +75,28 @@ jobs:
           fi
 
       - name: Build APK
+        if: steps.zipcheck.outputs.skip != 'true'
         run: ./gradlew assembleDebug -PbuildNumber=${{ github.run_number }} --stacktrace
 
       - uses: actions/upload-artifact@v4
+        if: steps.zipcheck.outputs.skip != 'true'
         with:
           name: jarvis-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
+      # The weekly run only checks the code still builds; it does not publish.
       - name: Publish release
-        if: github.event_name != 'schedule'
+        if: github.event_name != 'schedule' && steps.zipcheck.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk Jarvis.apk
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest Jarvis.apk --title "Jarvis build ${{ github.run_number }}" --notes "Jarvis build ${{ github.run_number }}. Download Jarvis.apk and install it."
+          for i in 1 2 3; do
+            gh release delete latest --yes --cleanup-tag || true
+            if gh release create latest Jarvis.apk --title "Jarvis build ${{ github.run_number }}" --notes "Jarvis build ${{ github.run_number }}. Download Jarvis.apk and install it."; then
+              exit 0
+            fi
+            echo "Publish attempt $i failed, retrying..."
+            sleep 10
+          done
+          exit 1
