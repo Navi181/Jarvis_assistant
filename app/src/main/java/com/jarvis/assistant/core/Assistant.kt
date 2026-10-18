@@ -95,8 +95,9 @@ object Assistant {
 
     // Google voice ids that are male, best first. Used when the user hasn't picked one.
     private val maleHints = listOf(
-        "en-in-x-end-local", "en-in-x-end-network", "en-in-x-ahp-local", "en-gb-x-rjs-local", "en-gb-x-gbd-local",
-        "en-us-x-iom-local", "en-us-x-iol-local", "en-us-x-tpd-local", "en-us-x-iob-local"
+        "en-gb-x-gbd-network", "en-gb-x-rjs-network", "en-gb-x-gbd-local", "en-gb-x-rjs-local", "en-gb-x-gbb-network", "en-gb-x-gbb-local",
+        "en-in-x-end-network", "en-in-x-end-local", "en-in-x-ahp-local",
+        "en-us-x-iom-network", "en-us-x-iom-local", "en-us-x-iol-local", "en-us-x-tpd-local", "en-us-x-iob-local"
     )
 
     private fun applyVoice(t: TextToSpeech) {
@@ -124,6 +125,12 @@ object Assistant {
 
     /** Switches to the next installed voice so you can find one you like by ear. Returns a label. */
     fun cycleVoice(): String {
+        if (GeminiTts.available()) {
+            val names = GeminiTts.voices
+            val next = names[(names.indexOf(Prefs.aiVoiceName.ifBlank { names[0] }) + 1) % names.size]
+            Prefs.aiVoiceName = next
+            return "Jarvis voice: $next (${names.indexOf(next) + 1} of ${names.size})"
+        }
         val t = tts ?: return "Voice not ready yet"
         val list = voiceChoices(t)
         if (list.size < 2) return "Only one voice on this phone. I deepen it for you. Install Speech Services by Google for more."
@@ -272,12 +279,56 @@ object Assistant {
         lastKeepOpen = keepOpen
         phase.value = Phase.SPEAKING
         val t = tts
-        if (t != null && ttsReady) {
-            val say = SpeechText.clean(text).let { SpeechText.limit(it, 2400) }
-            if (!(Prefs.deepVoice && speakDeep(t, say))) t.speak(say, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+        val say = SpeechText.clean(text).let { SpeechText.limit(it, 2400) }
+        val token = ++speakToken
+        if (GeminiTts.available()) {
+            // the Jarvis voice (Gemini, deep British male); the phone's voice covers it if this fails
+            Thread {
+                val pcm = GeminiTts.synth(say)
+                main.post {
+                    if (token != speakToken || phase.value != Phase.SPEAKING) return@post
+                    if (pcm != null && playPcm(pcm.first, pcm.second)) return@post
+                    if (t != null && ttsReady) speakLocal(t, say) else afterSpeech()
+                }
+            }.start()
+        } else if (t != null && ttsReady) {
+            speakLocal(t, say)
         } else {
             main.postDelayed({ afterSpeech() }, 1200)
         }
+    }
+
+    private var speakToken = 0
+
+    private fun speakLocal(t: TextToSpeech, say: String) {
+        if (!(Prefs.deepVoice && speakDeep(t, say))) t.speak(say, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+    }
+
+    private fun playPcm(b: ByteArray, rate: Int): Boolean = try {
+        val len = b.size - b.size % 2
+        if (len <= 0 || rate <= 0) {
+            false
+        } else {
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()
+                )
+                .setBufferSizeInBytes(len)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            track.write(b, 0, len)
+            player = track
+            track.play()
+            main.postDelayed(playEnd, len / 2 * 1000L / rate + 300L)
+            true
+        }
+    } catch (e: Exception) {
+        false
     }
 
     // ---------------------------------------------------------------- deep voice
@@ -293,6 +344,7 @@ object Assistant {
     }
 
     private fun stopSpeech() {
+        speakToken++
         tts?.stop()
         synthDone = null
         main.removeCallbacks(playEnd)
