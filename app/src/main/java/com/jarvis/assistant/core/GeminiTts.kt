@@ -50,7 +50,8 @@ object GeminiTts {
         if (!available()) return null
         val key = Prefs.keyFor("gemini")
         val voice = Extras.aiVoiceName.ifBlank { voices[0] }
-        val prompt = "Say calmly, in a deep, refined British male voice with quiet confidence, unhurried like a loyal AI butler: $text"
+        // no style instruction here: the speech model reads such text out loud. The deep voice comes from the chosen voice itself.
+        val prompt = text
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
             .put(

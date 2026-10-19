@@ -185,23 +185,45 @@ class JarvisAccessibilityService : AccessibilityService() {
     fun tapFirstResult(pkg: String, query: String): Boolean {
         val (p, list) = items()
         if (p != pkg || list.isEmpty()) return false
-        val minTop = resources.displayMetrics.heightPixels * 0.17
+        val dm = resources.displayMetrics
+        val minTop = dm.heightPixels * 0.17
+        val minWide = dm.widthPixels * 0.5
         val chips = setOf(
             "songs", "artists", "albums", "playlists", "podcasts", "podcasts & shows", "shows", "profiles", "genres", "genres & moods",
             "all", "music", "search", "cancel", "clear", "back", "top result", "videos", "audiobooks", "lyrics", "more", "filter"
         )
+        // buttons that sit on a result row but must never be pressed (they open menus, not the song)
+        val never = Regex("^(more|options?|menu|download|like|liked|heart|add to|share|follow|save|remove|hide|shuffle|sort|filter|clear|cancel|close|back|mic|voice search|camera|scan)\\b|more options|options for|context menu|add to (?:playlist|queue|liked)|^download|^go to ")
         val q = query.lowercase().trim()
         val words = q.split(Regex("[^a-z0-9]+")).filter { it.length >= 3 }
+        val r = android.graphics.Rect()
+        // the row that would be tapped: the nearest clickable view around the label, and it must be a wide row or card
+        fun rowOf(n: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+            var c: AccessibilityNodeInfo? = n
+            var d = 0
+            while (c != null && d < 6) {
+                if (c.isClickable) return c
+                c = c.parent
+                d++
+            }
+            return null
+        }
+        class Cand(val item: Item, val top: Int, val score: Int)
+        val cands = ArrayList<Cand>()
+        for (it in list) {
+            val low = it.label.lowercase().trim()
+            if (low.isBlank() || low in chips || low == q || never.containsMatchIn(low)) continue
+            if (it.node.isEditable || it.node.className?.toString().orEmpty().contains("EditText")) continue
+            val row = rowOf(it.node) ?: continue
+            row.getBoundsInScreen(r)
+            if (r.top <= minTop || r.width() < minWide) continue
+            val score = words.count { w -> w in low }
+            cands.add(Cand(it, r.top, score))
+        }
         val onResults = list.any { it.label.lowercase() in setOf("songs", "artists", "top result", "albums", "playlists") }
-        val cands = list.filter { it.label.isNotBlank() && !it.node.isEditable }
-            .filter { !it.node.className?.toString().orEmpty().contains("EditText") }
-            .filter { it.node.isClickable || it.node.parent?.isClickable == true }
-            .filter { topOf(it.node) > minTop }
-            .filter { it.label.lowercase().trim() !in chips && it.label.lowercase().trim() != q }
-            .sortedBy { topOf(it.node) }
-        val pick = cands.firstOrNull { c -> words.isNotEmpty() && words.any { it in c.label.lowercase() } }
-            ?: if (onResults) cands.firstOrNull() else null
-        return pick?.let { click(it) } ?: false
+        val best = cands.filter { it.score > 0 }.maxWithOrNull(compareBy<Cand> { it.score }.thenBy { -it.top })
+            ?: if (onResults) cands.minByOrNull { it.top } else null
+        return best?.let { click(it.item) } ?: false
     }
 
     /** Taps a Play / Resume button if the app in front shows one. */
