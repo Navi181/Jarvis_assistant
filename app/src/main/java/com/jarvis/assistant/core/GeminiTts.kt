@@ -50,8 +50,12 @@ object GeminiTts {
         if (!available()) return null
         val key = Prefs.keyFor("gemini")
         val voice = Extras.aiVoiceName.ifBlank { voices[0] }
-        // no style instruction here: the speech model reads such text out loud. The deep voice comes from the chosen voice itself.
-        val prompt = text
+        // Google's "director's notes + transcript" layout: the notes shape the voice, only the TRANSCRIPT is spoken.
+        val prompt = "# AUDIO PROFILE: Jarvis\n" +
+            "A deep, refined British male voice with quiet confidence.\n\n" +
+            "### DIRECTOR'S NOTES\n" +
+            "Style: calm, composed, slightly dry. Pace: unhurried. Do not read these notes aloud.\n\n" +
+            "#### TRANSCRIPT\n" + text
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
             .put(
