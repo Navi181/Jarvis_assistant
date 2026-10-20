@@ -38,6 +38,9 @@
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <package android:name="com.google.android.tts" />
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
         <package android:name="com.spotify.music" />
         <package android:name="com.amazon.mp3" />
         <package android:name="com.whatsapp" />
@@ -78,6 +81,17 @@
                 <category android:name="android.intent.category.VOICE" />
             </intent-filter>
         </activity>
+
+        <!-- Lets the camera app save a photo that Jarvis then looks at -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Hands-free wake word ("Jarvis") -->
         <service

@@ -18,6 +18,36 @@ class JarvisNotificationListener : NotificationListenerService() {
 
         val connected: Boolean get() = instance != null
 
+        class Replyable(val app: String, val sender: String, val action: Notification.Action)
+
+        /** The newest message notification that has a Reply box (WhatsApp, SMS, Telegram...). [who] narrows it to one sender. */
+        fun latestReplyable(ctx: Context, who: String = ""): Replyable? {
+            val svc = instance ?: return null
+            val list = try { svc.activeNotifications?.toList().orEmpty() } catch (e: Exception) { return null }
+            val pm = ctx.packageManager
+            for (sbn in list.filter { it.packageName != ctx.packageName }.sortedByDescending { it.postTime }) {
+                val act = sbn.notification.actions?.firstOrNull { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true } ?: continue
+                val title = sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+                if (who.isNotBlank() && !title.lowercase().contains(who.lowercase().trim())) continue
+                val app = try { pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString() } catch (e: Exception) { "that app" }
+                return Replyable(app, title.ifBlank { "this chat" }, act)
+            }
+            return null
+        }
+
+        /** Types the reply into the notification's own Reply box and sends it. */
+        fun sendReply(r: Replyable, message: String): Boolean = try {
+            val inputs = r.action.remoteInputs
+            val ri = inputs.first { it.allowFreeFormInput }
+            val data = android.os.Bundle().also { it.putCharSequence(ri.resultKey, message) }
+            val fill = android.content.Intent()
+            android.app.RemoteInput.addResultsToIntent(inputs, fill, data)
+            r.action.actionIntent.send(instance ?: throw IllegalStateException(), 0, fill)
+            true
+        } catch (e: Exception) {
+            false
+        }
+
         /** Spoken one-liners like "WhatsApp, Priya: running late". Newest first, max [limit]. */
         fun summaries(ctx: Context, limit: Int = 5): List<String>? {
             val svc = instance ?: return null

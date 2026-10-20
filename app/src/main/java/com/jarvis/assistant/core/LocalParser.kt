@@ -29,6 +29,16 @@ object LocalParser {
         if (Regex("^(?:who are you|what are you|what(?:'s| is) your name)$").matches(t)) return Plan("about")
         if (Regex("^(?:help|what can you do|what do you do|what are your (?:skills|features)|show (?:me )?(?:your )?skills)$").matches(t)) return Plan("help")
         if (Regex("\\b(?:good morning|morning briefing|daily briefing|brief me|my briefing|what(?:'s| is) my day)\\b").containsMatchIn(t)) return Plan("briefing")
+        Routines.parse(t)?.let { return it }
+
+        // ---- look at something with the camera
+        if (Regex("^(?:take a )?(?:look at (?:this|that)|what(?:'s| is) (?:this|that)(?: thing)?|what am i (?:looking|pointing) at|identify (?:this|that)|scan this)$").matches(t)) return Plan("look")
+
+        // ---- reply to the latest message notification (always confirmed first)
+        Regex("^(?:reply|respond|text back|message back|whatsapp back)(?: back)?(?: to (?:the |that |this )?(?:last |latest |recent |previous )?(?:message|text|one))?(?: to (.+?))?\\s+(?:saying|say|with|that says|that|:)\\s*(.+)$").find(t)?.let {
+            return Plan("reply_msg", target = it.groupValues[1].trim(), message = it.groupValues[2].trim())
+        }
+        Regex("^reply (?!to\\b)(.+)$").find(t)?.let { return Plan("reply_msg", message = it.groupValues[1].trim()) }
 
         // ---- go into depth on the last answer or any subject
         if (Brain.wantsDetail(t) && !Regex("^(?:play|call|open|send|set|add|navigate|turn|remind|text|message)\\b").containsMatchIn(t)) {
@@ -243,6 +253,9 @@ object LocalParser {
             "sms" ->
                 if (pending.target.isBlank()) pending.copy(target = a) else pending.copy(message = a)
             "note_add" -> pending.copy(message = a)
+            "reply_msg" -> pending.copy(message = a)
+            "reply_send" ->
+                if (Regex("^(?:yes|yeah|yep|yup|sure|send|send it|go ahead|do it|ok|okay|please do|confirm)\\b", RegexOption.IGNORE_CASE).containsMatchIn(a)) pending.copy(value = "yes") else Plan("noop")
             "alarm" -> parseClock(a, now)?.let { pending.copy(hour = it.first, minute = it.second) }
             "timer" -> parseDuration(a)?.let { pending.copy(seconds = it) }
             "reminder" -> when {

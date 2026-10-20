@@ -60,3 +60,6 @@
 - H9e: Always-listening: foreground service with a glowing orb notification and wake word while screen is locked (Android limits mic access when the phone is fully off; a locked phone works, a powered-off phone cannot)
 - H12: Songs actually start (structured "X by Y" search, then the app's own media session, then tap top result + Play via Accessibility); attach video / photo / audio / PDF in the chat (paperclip) and ask about it by typing or voice, uploaded once to Gemini's file store (needs a Gemini key). DONE (not yet built in cloud)
 - H13: App icon recoloured black, red and gold (same design); in-app orb unchanged. DONE (not yet built in cloud)
+- H14: Setup 'Health check' card with Fix buttons; streamed answers (text appears as it is written, first sentence spoken at once, rest pre-rendered so no gaps). DONE (not yet built in cloud)
+- H15: Routines (good night, study mode, movie mode + your own by voice) and a Setup card to see/delete routines and remembered facts. DONE (not yet built in cloud)
+- H16: Quiz/flashcards from an attached PDF or photo (one question at a time, with conversation context); camera button + 'look at this' by voice; 'reply to <name> saying …' sends through the message notification's own Reply box after confirming. DONE (not yet built in cloud)

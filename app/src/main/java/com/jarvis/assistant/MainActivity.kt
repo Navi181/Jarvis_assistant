@@ -108,6 +108,7 @@ class MainActivity : ComponentActivity() {
         if (i?.getBooleanExtra("askPerms", false) == true) {
             androidx.core.app.ActivityCompat.requestPermissions(this, com.jarvis.assistant.core.AppPerms.all, 77)
         }
+        if (i?.getBooleanExtra("look", false) == true) Assistant.pendingLook.value = true
         val a = i?.action
         val wantsListen = a == Intent.ACTION_ASSIST ||
             a == Intent.ACTION_VOICE_COMMAND ||

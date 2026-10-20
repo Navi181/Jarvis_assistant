@@ -276,6 +276,64 @@ object Llm {
         }
     }
 
+    /**
+     * Like [answer], but with Gemini the text is handed to [onText] (the whole text so far) as it is being written,
+     * so the screen and the voice can start before the answer is finished. Other providers answer in one go.
+     */
+    fun answerStream(system: String, user: String, search: Boolean, onText: (String) -> Unit): String {
+        val key = Prefs.keyFor("gemini")
+        if (key.isBlank() || order(search).firstOrNull() != "gemini") return answer(system, user, search)
+        val body = JSONObject()
+            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+            .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", user)))))
+        if (search) body.put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
+        val acc = StringBuilder()
+        try {
+            val model = geminiGood ?: geminiModels(key).first()
+            val c = java.net.URL("https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse").openConnection() as java.net.HttpURLConnection
+            try {
+                c.requestMethod = "POST"
+                c.connectTimeout = 10_000
+                c.readTimeout = 45_000
+                c.doOutput = true
+                c.setRequestProperty("x-goog-api-key", key)
+                c.setRequestProperty("Content-Type", "application/json")
+                c.setRequestProperty("User-Agent", "Jarvis-Android")
+                c.outputStream.use { it.write(quick(body).toString().toByteArray()) }
+                val code = c.responseCode
+                if (code !in 200..299) {
+                    val err = c.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    throw IOException("HTTP $code ${err.take(150)}")
+                }
+                c.inputStream.bufferedReader().use { r ->
+                    while (true) {
+                        val line = r.readLine() ?: break
+                        if (!line.startsWith("data:")) continue
+                        val json = line.removePrefix("data:").trim()
+                        if (json.isEmpty() || json == "[DONE]") continue
+                        val parts = try {
+                            JSONObject(json).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                        } catch (e: Exception) { null } ?: continue
+                        var added = false
+                        for (i in 0 until parts.length()) {
+                            val part = parts.optJSONObject(i) ?: continue
+                            if (part.optBoolean("thought", false)) continue
+                            val t = part.optString("text", "")
+                            if (t.isNotEmpty()) { acc.append(t); added = true }
+                        }
+                        if (added) onText(acc.toString())
+                    }
+                }
+            } finally {
+                c.disconnect()
+            }
+            geminiGood = model
+        } catch (e: IOException) {
+            if (acc.isBlank()) return answer(system, user, search)   // normal path, with its model fallbacks
+        }
+        return acc.toString().trim().ifBlank { answer(system, user, search) }
+    }
+
     /** Question about a video / photo / audio / PDF (Gemini only). [parts] holds file_data / text parts. */
     fun askWithMedia(system: String, parts: JSONArray): String {
         val key = Prefs.keyFor("gemini")

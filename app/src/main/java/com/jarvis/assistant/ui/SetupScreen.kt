@@ -143,6 +143,44 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                 color = InkDim, fontSize = 14.sp
             )
 
+            // health check: everything Jarvis depends on, with a one-tap fix for each
+            run {
+                val a11yOk = A11y.enabled(ctx)
+                val notifOk = com.jarvis.assistant.service.JarvisNotificationListener.connected
+                val writeOk = Settings.System.canWrite(ctx)
+                val keyOk = Prefs.hasAnyKey
+                val micOk = has(Manifest.permission.RECORD_AUDIO)
+                val modelOk = com.jarvis.assistant.core.WakeModel.ready(ctx)
+                fun row(label: String, ok: Boolean, fix: () -> Unit) = Triple(label, ok, fix)
+                val rows = listOf(
+                    row("Microphone", micOk) { permLauncher.launch(perms.toTypedArray()) },
+                    row("AI key added", keyOk) { android.widget.Toast.makeText(ctx, "Add a free Gemini or Groq key in card 2 below.", android.widget.Toast.LENGTH_LONG).show() },
+                    row("Accessibility (presses play, WhatsApp send, toggles)", a11yOk) { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                    row("Notification access (reads notifications, starts songs)", notifOk) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+                    row("Display over other apps", overlayOk) { ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))) },
+                    row("Default assistant", isDefault) { try { ctx.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) } catch (_: Exception) { ctx.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) } },
+                    row("Unrestricted battery", batteryOk) {
+                        try { ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + ctx.packageName))) }
+                        catch (_: Exception) { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                    },
+                    row("Change brightness (Modify system settings)", writeOk) { ctx.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + ctx.packageName))) },
+                    row("Wake-word model downloaded", modelOk) { android.widget.Toast.makeText(ctx, "Download it in card 3 below.", android.widget.Toast.LENGTH_LONG).show() }
+                )
+                val bad = rows.count { !it.second }
+                Card(
+                    "Health check",
+                    if (bad == 0) "Everything Jarvis needs is switched on." else "$bad thing${if (bad == 1) "" else "s"} need attention. Tap Fix next to each one."
+                ) {
+                    rows.forEach { (label, ok, fix) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(9.dp).background(if (ok) Good else Warn, CircleShape))
+                            Text(label, color = Ink, fontSize = 14.sp, modifier = Modifier.padding(start = 10.dp).weight(1f))
+                            if (!ok) TextButton(onClick = fix) { Text("Fix", color = Cyan, fontWeight = FontWeight.SemiBold) }
+                        }
+                    }
+                }
+            }
+
             // 1 permissions
             Card("1 · Permissions", "So Jarvis can hear you, find contacts, place calls and find your photos.") {
                 Status("Microphone", has(Manifest.permission.RECORD_AUDIO))
@@ -363,6 +401,27 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     "Tell Jarvis “remember that …” and it keeps it. Say “what do you remember about me” to hear it, or “forget everything”.",
                     color = InkDim, fontSize = 13.sp
                 )
+            }
+
+            Card("Routines & memory", "Say “good night”, “study mode” or “movie mode”. Make your own: “create a routine called gym: silence my phone, play lo-fi music on Spotify”, then say “run gym”.") {
+                var mine by remember { mutableStateOf(Prefs.routines()) }
+                var facts by remember { mutableStateOf(Prefs.facts()) }
+                Text("Built in: " + com.jarvis.assistant.core.Routines.builtins.joinToString(", ") { it.name }, color = InkDim, fontSize = 13.sp)
+                if (mine.isEmpty()) Text("No routines of your own yet.", color = InkDim, fontSize = 13.sp)
+                mine.forEach { r ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(r.name + ": " + r.steps.joinToString(", "), color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { Prefs.saveRoutines(mine.filter { it !== r }); mine = Prefs.routines() }) { Text("Delete", color = Warn) }
+                    }
+                }
+                Text("What Jarvis remembers about you (say “remember that …” to add):", color = InkDim, fontSize = 13.sp)
+                if (facts.isEmpty()) Text("Nothing yet.", color = InkDim, fontSize = 13.sp)
+                facts.forEachIndexed { i, f ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(f, color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { Prefs.removeFact(i); facts = Prefs.facts() }) { Text("Delete", color = Warn) }
+                    }
+                }
             }
 
             Card("7 · WhatsApp auto-send & focus lock", "Optional. Lets Jarvis press Send in WhatsApp for you, and bring itself back if you leave during a focus session. It never reads or stores anything.") {

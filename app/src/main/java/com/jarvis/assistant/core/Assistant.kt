@@ -48,6 +48,9 @@ object Assistant {
     /** A video / photo / audio / PDF attached to the chat; every question (typed or spoken) is about it until removed. */
     val media = MutableStateFlow<MediaAsk.Attachment?>(null)
 
+    /** Set when "look at this" is said: the main screen opens the camera, then describes the photo. */
+    val pendingLook = MutableStateFlow(false)
+
     /** The wake-word service sets these so only one thing owns the microphone at a time. */
     @Volatile var onMicNeeded: (() -> Unit)? = null
     @Volatile var onMicFree: (() -> Unit)? = null
@@ -279,13 +282,14 @@ object Assistant {
             respond("Done, I've let go of the ${a.kind}.", false)
             return
         }
+        val context = messages.value.takeLast(8).joinToString("\n") { (if (it.fromUser) "User: " else "Jarvis: ") + it.text.take(500) }
         messages.value = (messages.value + Msg(true, text)).takeLast(30)
         phase.value = Phase.THINKING
         pending = null
         job?.cancel()
         job = scope.launch {
             val reply = try {
-                kotlinx.coroutines.withContext(Dispatchers.IO) { MediaAsk.analyze(app, a, text, Brain.wantsDetail(text)) }
+                kotlinx.coroutines.withContext(Dispatchers.IO) { MediaAsk.analyze(app, a, text, Brain.wantsDetail(text), context) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -313,6 +317,9 @@ object Assistant {
         val waiting = pending
         pending = null
         job?.cancel()
+        val gen = ++streamGen
+        liveId = 0L; earlyPrefix = ""
+        streamSink = { acc -> main.post { if (gen == streamGen) onStream(acc) } }
         job = scope.launch {
             val out = try {
                 val plan = waiting?.let { LocalParser.complete(it, text) } ?: Brain.plan(text, history)
@@ -329,33 +336,117 @@ object Assistant {
 
     // ---------------------------------------------------------------- speaking
 
+    // ---- streamed answers: the text appears as it is written and the first sentence is spoken straight away
+    @Volatile var streamSink: ((String) -> Unit)? = null
+    private var streamGen = 0
+    private var liveId = 0L
+    private var earlyPrefix = ""
+
+    private fun onStream(acc: String) {
+        if (streamSink == null) return   // the answer is already complete
+        if (phase.value != Phase.THINKING && phase.value != Phase.SPEAKING) return
+        if (acc.isBlank()) return
+        if (liveId == 0L) {
+            val m = Msg(false, acc)
+            liveId = m.id
+            messages.value = (messages.value + m).takeLast(30)
+        } else {
+            val id = liveId
+            messages.value = messages.value.map { if (it.id == id) Msg(false, acc, id) else it }
+        }
+        if (earlyPrefix.isEmpty() && phase.value == Phase.THINKING) {
+            val m = Regex("^(.{30,}?[.!?])\\s+\\S", RegexOption.DOT_MATCHES_ALL).find(SpeechText.clean(acc))
+            if (m != null) {
+                val seg = m.groupValues[1]
+                earlyPrefix = seg
+                turnDone = false
+                phase.value = Phase.SPEAKING
+                ++speakToken
+                queue.clear(); segPlaying = false; waitingSeg = null
+                enqueue(seg)
+                pump()
+            }
+        }
+    }
+
+    // ---- speech queue: pieces are turned into sound ahead of time so there is no gap between them
+    private class Seg(val text: String) {
+        @Volatile var pcm: Pair<ByteArray, Int>? = null
+        @Volatile var done = false
+    }
+    private val queue = ArrayDeque<Seg>()
+    private var segPlaying = false
+    private var waitingSeg: Seg? = null
+    private var turnDone = true
+
+    private fun enqueue(text: String) {
+        val seg = Seg(text)
+        queue.addLast(seg)
+        val token = speakToken
+        if (GeminiTts.available() && text.length <= 420) {
+            // the Jarvis voice (Gemini, deep British male); the phone's voice covers it if this fails
+            Thread {
+                seg.pcm = GeminiTts.synth(text)
+                seg.done = true
+                main.post { if (token == speakToken && waitingSeg === seg) { waitingSeg = null; pump() } }
+            }.start()
+        } else seg.done = true
+    }
+
+    private fun pump() {
+        if (segPlaying || phase.value != Phase.SPEAKING) return
+        val seg = queue.firstOrNull() ?: return
+        if (!seg.done) { waitingSeg = seg; return }
+        queue.removeFirst()
+        segPlaying = true
+        val pcm = seg.pcm
+        val t = tts
+        if (pcm != null && playPcm(pcm.first, pcm.second)) return
+        if (t != null && ttsReady) speakLocal(t, seg.text) else main.postDelayed({ afterSpeech() }, 1200)
+    }
+
+    private fun splitSegs(text: String): List<String> {
+        val out = ArrayList<String>()
+        var cur = StringBuilder()
+        for (sentence in Regex("(?<=[.!?])\\s+").split(text.trim())) {
+            if (cur.isNotEmpty() && cur.length + sentence.length > 400) { out.add(cur.toString().trim()); cur = StringBuilder() }
+            cur.append(sentence).append(' ')
+        }
+        if (cur.isNotBlank()) out.add(cur.toString().trim())
+        return out
+    }
+
     private fun respond(text: String, keepOpen: Boolean) {
+        streamSink = null
         if (text.isBlank()) {
+            liveId = 0L
             finish()
             return
         }
-        messages.value = (messages.value + Msg(false, text)).takeLast(30)
+        val live = liveId
+        liveId = 0L
+        messages.value = if (live != 0L && messages.value.any { it.id == live })
+            messages.value.map { if (it.id == live) Msg(false, text, live) else it }
+        else (messages.value + Msg(false, text)).takeLast(30)
         lastReply = text
         lastKeepOpen = keepOpen
         phase.value = Phase.SPEAKING
-        val t = tts
         val say = SpeechText.clean(text).let { SpeechText.limit(it, 2400) }
-        val token = ++speakToken
-        if (GeminiTts.available() && say.length <= 420) {
-            // the Jarvis voice (Gemini, deep British male); the phone's voice covers it if this fails
-            Thread {
-                val pcm = GeminiTts.synth(say)
-                main.post {
-                    if (token != speakToken || phase.value != Phase.SPEAKING) return@post
-                    if (pcm != null && playPcm(pcm.first, pcm.second)) return@post
-                    if (t != null && ttsReady) speakLocal(t, say) else afterSpeech()
-                }
-            }.start()
-        } else if (t != null && ttsReady) {
-            speakLocal(t, say)
-        } else {
-            main.postDelayed({ afterSpeech() }, 1200)
+        val early = earlyPrefix
+        earlyPrefix = ""
+        if (early.isNotEmpty()) {
+            // the first sentence is already being spoken: queue only what is left
+            val rest = (if (say.startsWith(early)) say.removePrefix(early) else say).trim()
+            if (rest.isNotEmpty()) splitSegs(rest).forEach { enqueue(it) }
+            turnDone = true
+            if (!segPlaying && queue.isEmpty()) afterSpeech() else pump()
+            return
         }
+        ++speakToken
+        queue.clear(); segPlaying = false; waitingSeg = null
+        turnDone = true
+        enqueue(say)
+        pump()
     }
 
     private var speakToken = 0
@@ -405,6 +496,7 @@ object Assistant {
 
     private fun stopSpeech() {
         speakToken++
+        queue.clear(); segPlaying = false; waitingSeg = null; turnDone = true; earlyPrefix = ""
         tts?.stop()
         synthDone = null
         main.removeCallbacks(playEnd)
@@ -479,6 +571,9 @@ object Assistant {
 
     private fun afterSpeech() {
         if (phase.value != Phase.SPEAKING) return
+        segPlaying = false
+        if (queue.isNotEmpty()) { pump(); return }
+        if (!turnDone) return   // the rest of the answer is still being written
         // Keep the mic open when Jarvis asked you something, or after an answer in conversation mode.
         val more = pending != null || lastReply.trimEnd().endsWith("?") || (Prefs.continuous && lastKeepOpen)
         if (more && followUps < 4) {
@@ -490,6 +585,7 @@ object Assistant {
     }
 
     private fun finish() {
+        streamSink = null; liveId = 0L; earlyPrefix = ""; turnDone = true; queue.clear(); segPlaying = false; waitingSeg = null
         phase.value = Phase.IDLE
         level.value = 0f
         partial.value = ""

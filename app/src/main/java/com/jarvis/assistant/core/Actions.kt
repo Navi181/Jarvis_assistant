@@ -60,6 +60,16 @@ object Actions {
         "note_clear" -> { Prefs.clearNotes(); Outcome("All your notes are cleared.") }
         "notifications" -> notifications(ctx)
         "briefing" -> briefing(ctx)
+        "look" -> done(
+            launch(ctx, Intent(ctx, com.jarvis.assistant.MainActivity::class.java).putExtra("look", true)),
+            "Opening the camera. Take a photo of it and I'll tell you what I see.", "I couldn't open the camera."
+        )
+        "reply_msg" -> replyMsg(ctx, p)
+        "reply_send" -> replySend(ctx, p)
+        "routine_run" -> routineRun(ctx, p)
+        "routine_save" -> routineSave(p)
+        "routine_list" -> info(Routines.all().joinToString(". ") { it.name }.let { "Your routines are: $it. Say run, then the name." })
+        "routine_delete" -> routineDelete(p)
         "phone_do" -> withContext(Dispatchers.Default) { Outcome(PhoneAgent.run(ctx, p.target.ifBlank { p.message })) }
         "toggle" -> toggle(ctx, p)
         "global" -> globalAction(ctx, p)
@@ -772,6 +782,53 @@ object Actions {
         }
         if (list.isEmpty()) return info("You have no new notifications.")
         return info("You have ${list.size} recent notification" + (if (list.size > 1) "s" else "") + ". " + list.joinToString(". "))
+    }
+
+    private fun replyMsg(ctx: Context, p: Plan): Outcome {
+        if (!JarvisNotificationListener.connected) {
+            launch(ctx, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            return Outcome("I need notification access to reply. I've opened the page, just switch Jarvis on.")
+        }
+        val msg = p.message.trim()
+        if (msg.isEmpty()) return ask("What should I reply?", p)
+        val r = JarvisNotificationListener.latestReplyable(ctx, p.target)
+            ?: return Outcome(if (p.target.isBlank()) "I don't see a message I can reply to right now." else "I don't see a message from ${p.target} that I can reply to.")
+        return ask("Reply to ${r.sender} on ${r.app}: $msg. Shall I send it?", Plan("reply_send", target = r.sender, message = msg))
+    }
+
+    private fun replySend(ctx: Context, p: Plan): Outcome {
+        if (p.value != "yes") return Outcome("Okay, I won't send it.")
+        val r = JarvisNotificationListener.latestReplyable(ctx, p.target) ?: return Outcome("That message has gone from your notifications, so I couldn't reply.")
+        return Outcome(if (JarvisNotificationListener.sendReply(r, p.message)) "Sent." else "I couldn't send that reply.")
+    }
+
+    private suspend fun routineRun(ctx: Context, p: Plan): Outcome {
+        val r = Routines.find(p.target) ?: return Outcome("I don't have a routine called ${p.target}.")
+        val said = ArrayList<String>()
+        for (step in r.steps) {
+            val plan = (LocalParser.parse(step) ?: try { Brain.plan(step, emptyList()) } catch (e: Exception) { null }) ?: continue
+            if (plan.action.startsWith("routine")) continue
+            val out = try { run(ctx, plan) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { continue }
+            if (out.reply.isNotBlank() && plan.action != "answer") said.add(out.reply)
+            kotlinx.coroutines.delay(900)
+        }
+        return Outcome("Running ${r.name}. " + said.joinToString(" "))
+    }
+
+    private fun routineSave(p: Plan): Outcome {
+        val steps = Routines.splitSteps(p.message)
+        if (p.target.isBlank() || steps.isEmpty()) return Outcome("Tell me the name and the steps, for example: create a routine called gym, silence my phone, play lo-fi music on Spotify.")
+        val others = Prefs.routines().filter { it.name.lowercase() != p.target.lowercase() }
+        Prefs.saveRoutines(others + Routines.Routine(p.target.trim(), steps))
+        return Outcome("Saved the routine ${p.target} with ${steps.size} step" + (if (steps.size == 1) "." else "s.") + " Say run ${p.target} any time.")
+    }
+
+    private fun routineDelete(p: Plan): Outcome {
+        val before = Prefs.routines()
+        val after = before.filter { it.name.lowercase() != p.target.lowercase().trim() }
+        if (after.size == before.size) return Outcome("I couldn't find a routine of yours called ${p.target}.")
+        Prefs.saveRoutines(after)
+        return Outcome("Deleted the routine ${p.target}.")
     }
 
     private suspend fun briefing(ctx: Context): Outcome {

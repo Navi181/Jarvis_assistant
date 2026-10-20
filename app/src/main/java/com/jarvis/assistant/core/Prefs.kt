@@ -135,6 +135,15 @@ object Prefs {
     fun addFact(f: String) = put("facts", (facts() + f.trim()).takeLast(60).joinToString("\u001F"))
     fun clearFacts() = put("facts", "")
 
+    fun removeFact(index: Int) = put("facts", facts().filterIndexed { i, _ -> i != index }.joinToString("\u001F"))
+
+    /** Your own routines (see [Routines]). */
+    fun routines(): List<Routines.Routine> = str("routines").split('\u001F').filter { it.contains('\u001E') }.map {
+        val (n, st) = it.split('\u001E', limit = 2)
+        Routines.Routine(n, st.split('\u001D').filter { x -> x.isNotBlank() })
+    }
+    fun saveRoutines(l: List<Routines.Routine>) = put("routines", l.joinToString("\u001F") { it.name + "\u001E" + it.steps.joinToString("\u001D") })
+
     // ---- study
     var studyLevel: String
         get() = str("studyLevel", "high school")

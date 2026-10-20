@@ -75,16 +75,19 @@ object MediaAsk {
     }
 
     /** Uploads (once) and asks. Throws [LlmFailure] or [IOException]. */
-    fun analyze(ctx: Context, a: Attachment, question: String, detailed: Boolean): String {
+    fun analyze(ctx: Context, a: Attachment, question: String, detailed: Boolean, context: String = ""): String {
         val key = Prefs.keyFor("gemini")
         if (key.isBlank()) throw LlmFailure(LlmFailure.Kind.NO_KEY, "gemini")
         val up = ensureUploaded(ctx, a, key)
         val system = "You are Jarvis, a calm, witty voice assistant. The user attached a ${a.kind} and is asking about it. " +
             "Answer only from what is really in it; say so if something cannot be told. Plain spoken English, no markdown, no bullet symbols. " +
+            "If the user asks to be quizzed or tested on it, ask exactly ONE question at a time about what is really in the file, then stop and wait. " +
+            "When they answer, say briefly whether it was right (and the correct answer if not), then ask the next question. " +
+            "If they ask for flashcards or notes, write them clearly, one per line. " +
             (if (detailed) "Give a thorough answer of about 250 to 350 words." else "Keep it to about 4 to 6 short sentences unless the question needs more.")
         val parts = JSONArray()
             .put(JSONObject().put("file_data", JSONObject().put("mime_type", up.mime).put("file_uri", up.uri)))
-            .put(JSONObject().put("text", question))
+            .put(JSONObject().put("text", if (context.isBlank()) question else "Conversation so far:\n$context\n\nUser: $question"))
         return try {
             Llm.askWithMedia(system, parts)
         } catch (e: LlmFailure) {
@@ -94,7 +97,7 @@ object MediaAsk {
                 val again = ensureUploaded(ctx, a, key)
                 val p2 = JSONArray()
                     .put(JSONObject().put("file_data", JSONObject().put("mime_type", again.mime).put("file_uri", again.uri)))
-                    .put(JSONObject().put("text", question))
+                    .put(JSONObject().put("text", if (context.isBlank()) question else "Conversation so far:\n$context\n\nUser: $question"))
                 Llm.askWithMedia(system, p2)
             } else throw e
         }

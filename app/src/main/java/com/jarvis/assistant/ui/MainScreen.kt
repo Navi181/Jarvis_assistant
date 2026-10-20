@@ -60,6 +60,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AssistChip
@@ -135,6 +136,41 @@ fun MainScreen(onSettings: () -> Unit) {
         } else if (t.isNotEmpty()) {
             Assistant.submit(t)
             typed = ""
+        }
+    }
+
+    // take a photo inside Jarvis and ask about it ("look at this")
+    var shotUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var lookAuto by remember { mutableStateOf(false) }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val u = shotUri
+        if (ok && u != null) {
+            try {
+                Assistant.attach(MediaAsk.describe(ctx, u))
+                if (lookAuto) Assistant.submitMedia("")
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "I couldn't use that photo.", Toast.LENGTH_LONG).show()
+            }
+        }
+        lookAuto = false
+    }
+    fun shoot(auto: Boolean) {
+        try {
+            val dir = java.io.File(ctx.cacheDir, "shots").apply { mkdirs() }
+            val f = java.io.File(dir, "shot_" + System.currentTimeMillis() + ".jpg")
+            val u = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+            shotUri = u
+            lookAuto = auto
+            takePhoto.launch(u)
+        } catch (e: Exception) {
+            Toast.makeText(ctx, "I couldn't open the camera.", Toast.LENGTH_LONG).show()
+        }
+    }
+    val wantLook by Assistant.pendingLook.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(wantLook) {
+        if (wantLook) {
+            Assistant.pendingLook.value = false
+            shoot(true)
         }
     }
 
@@ -308,6 +344,15 @@ fun MainScreen(onSettings: () -> Unit) {
                 ) {
                     Icon(Icons.Rounded.AttachFile, contentDescription = "Attach a video, photo or file", tint = if (media != null) Cyan else InkDim)
                 }
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable { shoot(false) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.PhotoCamera, contentDescription = "Take a photo to ask about", tint = InkDim)
+                }
                 BasicTextField(
                     value = typed,
                     onValueChange = { typed = it },
@@ -316,7 +361,7 @@ fun MainScreen(onSettings: () -> Unit) {
                     maxLines = 5,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { sendTyped() }),
-                    modifier = Modifier.weight(1f).heightIn(min = 40.dp).padding(start = 6.dp, top = 8.dp, bottom = 8.dp).onFocusChanged { focused = it.isFocused },
+                    modifier = Modifier.weight(1f).heightIn(min = 40.dp).padding(start = 4.dp, top = 8.dp, bottom = 8.dp).onFocusChanged { focused = it.isFocused },
                     decorationBox = { inner ->
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (typed.isEmpty()) Text(if (media != null) "Ask about this ${media?.kind}…" else "Message Jarvis…", color = InkDim, fontSize = 17.sp)

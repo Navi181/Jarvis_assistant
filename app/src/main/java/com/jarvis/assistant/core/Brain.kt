@@ -95,6 +95,10 @@ action must be one of:
 - shop (target = item, value = amazon | flipkart; opens the store search)
 - install_app (target = app name; opens the Play Store)
 - calendar (message = event title, hour and minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length in seconds; opens the calendar prefilled)
+- routine_run (target = name of a routine to run, e.g. good night, study mode, movie mode, or one the user made)
+- routine_save (target = name, message = the steps separated by commas, e.g. "silence my phone, set a timer for 25 minutes")
+- reply_msg (target = person's name or "", message = the reply text; replies to their latest message notification after confirming)
+- look (opens the camera to look at something the user is pointing at, then describes it)
 - remember (message = the fact to remember about the user)
 - screen_read (target = what the user wants to know about the current screen, or "")
 - agenda (value = today | tomorrow; reads the calendar aloud)
@@ -197,7 +201,7 @@ Current date and time: ${now()}
         "You are JARVIS. Today is ${now()}. Answer the question directly, starting with the actual answer (winner, score, number, name, explanation), in ${lengthLine()}. " +
                 "Use up-to-date web information for anything that can change; for settled knowledge answer fully and correctly. Never give links, sources or markdown. " +
                 "Say the user can ask you to elaborate if there is more. If you truly can't find it, say so briefly.",
-        "Conversation so far:\n${recentContext()}\n\nQuestion: $question", true, question
+        "Conversation so far:\n${recentContext()}\n\nQuestion: $question", true, question, stream = true
     )
 
     fun screenSummary(pkg: String, text: String): String = text(
@@ -233,10 +237,10 @@ Current date and time: ${now()}
         "Request: ${ask.ifBlank { "Tell me what is on my screen and summarise it." }}\nScreen:\n$screen", false
     )
 
-    private fun text(system: String, user: String, search: Boolean, fb: String = user): String {
+    private fun text(system: String, user: String, search: Boolean, fb: String = user, stream: Boolean = false): String {
         if (!Prefs.hasAnyKey) return (if (search) clean(Fallback.answer(fb).orEmpty()) else "").ifBlank { "I need a free Gemini or Groq key for that. You can add it in setup." }
         return try {
-            clean(Llm.answer(system, user, search))
+            clean(if (stream) Llm.answerStream(system, user, search) { acc -> Assistant.streamSink?.invoke(clean(acc)) } else Llm.answer(system, user, search))
         } catch (e: LlmFailure) {
             (if (search) clean(Fallback.answer(fb).orEmpty()) else "").ifBlank { friendly(e) }
         } catch (e: Exception) {
