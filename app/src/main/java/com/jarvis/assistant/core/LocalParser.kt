@@ -28,7 +28,7 @@ object LocalParser {
         if (Regex("^(?:hello|hi|hey|yo|are you there|you there|jarvis)$").matches(t)) return Plan("greet")
         if (Regex("^(?:who are you|what are you|what(?:'s| is) your name)$").matches(t)) return Plan("about")
         if (Regex("^(?:help|what can you do|what do you do|what are your (?:skills|features)|show (?:me )?(?:your )?skills)$").matches(t)) return Plan("help")
-        if (Regex("\\b(?:good morning|morning briefing|daily briefing|brief me|my briefing|what(?:'s| is) my day)\\b").containsMatchIn(t)) return Plan("briefing")
+        if (!Regex("^(?:translate|how (?:do|would) (?:you|i) say)\\b").containsMatchIn(t) && Regex("\\b(?:good morning|morning briefing|daily briefing|brief me|my briefing|what(?:'s| is) my day)\\b").containsMatchIn(t)) return Plan("briefing")
         // ---- links, news digest
         Regex("^(?:read|summari[sz]e)(?: out| aloud)?(?: me)? (?:this |that |the )?(https?://\\S+)$").find(lower.trim().trimEnd('.', '!', '?', ' '))?.let {
             return Plan("read_link", target = Regex("https?://\\S+").find(raw)?.value?.trimEnd('.', ',', ')') ?: it.groupValues[1])
