@@ -16,6 +16,7 @@ class JarvisApp : Application() {
         com.jarvis.assistant.core.Extras.init(this)
         CrashLog.install(this)
         Assistant.init(this)
+        com.jarvis.assistant.core.Scheduler.scheduleAll(this)
         // the small orange orb while Jarvis listens and you are in another app
         CoroutineScope(Dispatchers.Main).launch { Assistant.phase.collect { ListenOrb.update(this@JarvisApp, it) } }
         CoroutineScope(Dispatchers.Main).launch { Assistant.messages.collect { ListenOrb.onMessages(this@JarvisApp, it) } }

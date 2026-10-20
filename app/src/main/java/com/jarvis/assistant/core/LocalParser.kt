@@ -29,6 +29,48 @@ object LocalParser {
         if (Regex("^(?:who are you|what are you|what(?:'s| is) your name)$").matches(t)) return Plan("about")
         if (Regex("^(?:help|what can you do|what do you do|what are your (?:skills|features)|show (?:me )?(?:your )?skills)$").matches(t)) return Plan("help")
         if (Regex("\\b(?:good morning|morning briefing|daily briefing|brief me|my briefing|what(?:'s| is) my day)\\b").containsMatchIn(t)) return Plan("briefing")
+        // ---- links, news digest
+        Regex("^(?:read|summari[sz]e)(?: out| aloud)?(?: me)? (?:this |that |the )?(https?://\\S+)$").find(lower.trim().trimEnd('.', '!', '?', ' '))?.let {
+            return Plan("read_link", target = Regex("https?://\\S+").find(raw)?.value?.trimEnd('.', ',', ')') ?: it.groupValues[1])
+        }
+        if (Regex("^(?:read|summari[sz]e)(?: out| aloud)?(?: me)?(?: this| that| the)? (?:link|article|page|url|copied link|copied text)(?: aloud| out)?$").matches(t)) return Plan("read_link")
+        if (Regex("^(?:give me |read |what'?s |tell me |play )?(?:my |the )?(?:daily |morning )?(?:news digest|news briefing|news brief|digest|morning news)$").matches(t) || t == "brief me on the news") return Plan("news_digest")
+        Regex("^(?:set |change )?my news topics(?: are| to)? (.+)$").find(t)?.let { return Plan("news_topics", value = it.groupValues[1].replace(Regex("\\s+and\\s+"), ", ").trim()) }
+
+        // ---- translation and parking
+        if (Regex("^(?:stop|exit|end|turn off|leave) (?:the )?(?:translating|translation|translator)(?: mode)?$").matches(t)) return Plan("translate_off")
+        Regex("^(?:translate|interpret)(?: everything| what i say)?(?: for me)? (?:in)?to ([a-z ]+?)$|^(?:start |turn on |enter )?(?:translation|translator|interpreter) mode(?: (?:in)?to ([a-z ]+?))?$").find(t)?.let {
+            val lang = (it.groupValues[1].ifBlank { it.groupValues[2] }).trim()
+            return Plan("translate_on", value = lang.ifBlank { "English" })
+        }
+        Regex("^(?:translate (.+?) (?:in|into|to)|how (?:do|would) (?:you|i) say (.+?) (?:in|into)) ([a-z]+(?: [a-z]+)?)$").find(t)?.let {
+            val w = it.groupValues[1].ifBlank { it.groupValues[2] }.trim()
+            if (!w.startsWith("everything")) return Plan("translate", message = w, value = it.groupValues[3].trim())
+        }
+        if (Regex("^(?:where (?:did i|have i|is my car|was i)(?: park| parked)?(?: the car| my car)?|where(?:'s| is) my car(?: parked)?|where did i park(?: my car| the car)?)$").matches(t)) return Plan("park_where")
+        Regex("^(?:i )?(?:parked|park(?:ed)? my car|remember where i parked)(?: (?:the car|my car|it))?(?: (?:at|on|in|near|by|outside|behind|next to|opposite)? ?(.*))?$").find(t)?.let {
+            val loc = it.groupValues[1].trim()
+            val whole = t.removePrefix("i ").removePrefix("parked").removePrefix(" my car").removePrefix(" the car").trim()
+            return Plan("park_save", message = if (t.startsWith("remember")) "" else (if (whole.isBlank()) "" else whole.ifBlank { loc }))
+        }
+
+        // ---- routines that run by themselves, and reminders that repeat until you say done
+        Regex("^(?:run|start|do|schedule|activate|set up)\\s+(?:my |the )?(.+?)(?: routine)?\\s+(?:(?:every ?day|daily|each day|every (?:morning|night|evening))\\s+)?(?:at|by|for)\\s+(.+?)(?:\\s+(?:every ?day|daily|each day))?$").find(t)?.let { m ->
+            val c = parseClock(m.groupValues[2], now)
+            if (c != null && Routines.find(m.groupValues[1]) != null) return Plan("routine_schedule", target = m.groupValues[1].trim(), hour = c.first, minute = c.second)
+        }
+        Regex("^(?:stop|cancel|unschedule|remove|delete) (?:my |the )?(?:scheduled |daily )(.+?)(?: routine)?$|^(?:stop|cancel|unschedule|remove) (?:the )?(.+?) (?:schedule|every day)$").find(t)?.let {
+            return Plan("routine_unschedule", target = (it.groupValues[1].ifBlank { it.groupValues[2] }).trim())
+        }
+        if (Regex("^(?:what(?:'s| is| are)|list|show) (?:my )?(?:scheduled|daily) (?:routines|things|tasks)$").matches(t)) return Plan("routine_scheduled")
+        Regex("^(?:keep reminding me|nag me|remind me)(?: to| about)? (.+?) every (.+?) until (?:i )?(?:say |tell you |said )?(?:done|stop|i(?:'m| am) done|it'?s done)$").find(t)?.let {
+            return Plan("nag", message = it.groupValues[1].trim(), seconds = parseDuration(it.groupValues[2]) ?: 300)
+        }
+        Regex("^(?:keep reminding me|nag me)(?: to| about)? (.+)$").find(t)?.let { return Plan("nag", message = it.groupValues[1].trim(), seconds = 300) }
+        if (Regex("^(?:stop (?:reminding|nagging) me|stop the reminders?|stop nagging)$").matches(t)) return Plan("nag_stop")
+        if (Regex("^(?:done|i(?:'m| am| have)? done|i did it|finished|it'?s done|okay i did it|i have done it)$").matches(t) &&
+            (try { Prefs.nagMessage.isNotBlank() } catch (e: Exception) { false })) return Plan("nag_stop")
+
         Routines.parse(t)?.let { return it }
 
         // ---- look at something with the camera
@@ -253,6 +295,7 @@ object LocalParser {
             "sms" ->
                 if (pending.target.isBlank()) pending.copy(target = a) else pending.copy(message = a)
             "note_add" -> pending.copy(message = a)
+            "park_save" -> pending.copy(message = a)
             "reply_msg" -> pending.copy(message = a)
             "reply_send" ->
                 if (Regex("^(?:yes|yeah|yep|yup|sure|send|send it|go ahead|do it|ok|okay|please do|confirm)\\b", RegexOption.IGNORE_CASE).containsMatchIn(a)) pending.copy(value = "yes") else Plan("noop")

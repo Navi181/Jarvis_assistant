@@ -63,3 +63,6 @@
 - H14: Setup 'Health check' card with Fix buttons; streamed answers (text appears as it is written, first sentence spoken at once, rest pre-rendered so no gaps). DONE (not yet built in cloud)
 - H15: Routines (good night, study mode, movie mode + your own by voice) and a Setup card to see/delete routines and remembered facts. DONE (not yet built in cloud)
 - H16: Quiz/flashcards from an attached PDF or photo (one question at a time, with conversation context); camera button + 'look at this' by voice; 'reply to <name> saying …' sends through the message notification's own Reply box after confirming. DONE (not yet built in cloud)
+- H17: Routines that run by themselves at a set time ("run good night every day at 10 pm"), reminders that repeat until you say done, survive reboot. DONE (not yet built in cloud)
+- H18: History screen (clock icon on Home: read, tap to copy, copy all, share, clear); translation mode ("translate to Hindi" / "stop translating"; one-off "translate good morning to French"); "I parked on level 3" / "where did I park". DONE (not yet built in cloud)
+- H19: Read a link aloud ("read this link" after copying one, or "read <url>"); news digest ("news digest", "my news topics are cricket and tech"); home-screen widget (tap to talk + next scheduled item). DONE (not yet built in cloud)

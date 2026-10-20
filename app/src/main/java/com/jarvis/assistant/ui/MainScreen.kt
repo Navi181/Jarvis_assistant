@@ -59,6 +59,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Settings
@@ -110,7 +111,7 @@ private val suggestions = listOf(
 )
 
 @Composable
-fun MainScreen(onSettings: () -> Unit) {
+fun MainScreen(onSettings: () -> Unit, onHistory: () -> Unit = {}) {
     val ctx = LocalContext.current
     val phase by Assistant.phase.collectAsState()
     val level by Assistant.level.collectAsState()
@@ -237,6 +238,9 @@ fun MainScreen(onSettings: () -> Unit) {
                     color = Ink, fontFamily = Fonts.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = onHistory) {
+                    Icon(Icons.Rounded.History, contentDescription = "History", tint = InkDim)
+                }
                 IconButton(onClick = onSettings) {
                     Icon(Icons.Rounded.Settings, contentDescription = "Setup", tint = InkDim)
                 }

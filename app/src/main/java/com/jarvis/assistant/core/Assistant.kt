@@ -277,13 +277,13 @@ object Assistant {
     private fun handleMedia(a: MediaAsk.Attachment, text: String) {
         if (mediaClear(text)) {
             attach(null)
-            messages.value = (messages.value + Msg(true, text)).takeLast(30)
+            messages.value = (messages.value + Msg(true, text)).takeLast(30); History.add(true, text)
             pending = null
             respond("Done, I've let go of the ${a.kind}.", false)
             return
         }
         val context = messages.value.takeLast(8).joinToString("\n") { (if (it.fromUser) "User: " else "Jarvis: ") + it.text.take(500) }
-        messages.value = (messages.value + Msg(true, text)).takeLast(30)
+        messages.value = (messages.value + Msg(true, text)).takeLast(30); History.add(true, text)
         phase.value = Phase.THINKING
         pending = null
         job?.cancel()
@@ -312,7 +312,7 @@ object Assistant {
             }
         }
         val history = messages.value.takeLast(6)
-        messages.value = (messages.value + Msg(true, text)).takeLast(30)
+        messages.value = (messages.value + Msg(true, text)).takeLast(30); History.add(true, text)
         phase.value = Phase.THINKING
         val waiting = pending
         pending = null
@@ -322,7 +322,10 @@ object Assistant {
         streamSink = { acc -> main.post { if (gen == streamGen) onStream(acc) } }
         job = scope.launch {
             val out = try {
-                val plan = waiting?.let { LocalParser.complete(it, text) } ?: Brain.plan(text, history)
+                val tl = try { Prefs.translateTo } catch (e: Exception) { "" }
+                val plan = waiting?.let { LocalParser.complete(it, text) }
+                    ?: if (tl.isNotBlank() && LocalParser.parse(text)?.action != "translate_off") Plan("translate", message = text, value = tl)
+                    else Brain.plan(text, history)
                 Actions.run(app, plan)
             } catch (e: CancellationException) {
                 throw e
@@ -429,6 +432,7 @@ object Assistant {
             messages.value.map { if (it.id == live) Msg(false, text, live) else it }
         else (messages.value + Msg(false, text)).takeLast(30)
         lastReply = text
+        History.add(false, text)
         lastKeepOpen = keepOpen
         phase.value = Phase.SPEAKING
         val say = SpeechText.clean(text).let { SpeechText.limit(it, 2400) }

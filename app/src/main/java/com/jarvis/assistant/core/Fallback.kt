@@ -29,6 +29,16 @@ object Fallback {
         .replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
         .replace("&lt;", "<").replace("&gt;", ">").trim()
 
+    /** Top [n] headlines for a topic (blank = general headlines), straight from Google News. */
+    fun headlines(topic: String, n: Int = 2): List<String> = try {
+        val url = if (topic.isNotBlank())
+            "https://news.google.com/rss/search?q=" + URLEncoder.encode(topic, "UTF-8") + "&hl=en-IN&gl=IN&ceid=IN:en"
+        else "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en"
+        Regex("<item>.*?<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).findAll(Net.get(url))
+            .map { decode(it.groupValues[1]).substringBeforeLast(" - ") }
+            .filter { it.isNotBlank() }.distinct().take(n).toList()
+    } catch (e: Exception) { emptyList() }
+
     private fun news(q: String): String? {
         val topic = q.lowercase()
             .replace(Regex("\\b(what's|what is|whats|the|latest|news|headlines|today|today's|about|on|in|tell me|me|any|is there|are there|please|jarvis|give|show|read)\\b"), " ")

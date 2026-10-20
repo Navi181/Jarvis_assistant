@@ -95,6 +95,13 @@ action must be one of:
 - shop (target = item, value = amazon | flipkart; opens the store search)
 - install_app (target = app name; opens the Play Store)
 - calendar (message = event title, hour and minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length in seconds; opens the calendar prefilled)
+- read_link (target = web address; blank = the link or text just copied)
+- news_digest (read headlines for the user's topics) and news_topics (value = comma separated topics)
+- translate (message = text, value = target language; one-off translation)
+- translate_on (value = language; keep translating everything the user says) and translate_off
+- park_save (message = where the car is) and park_where
+- routine_schedule (target = routine name, hour and minute = time of day; runs it by itself every day)
+- nag (message = what to keep reminding, seconds = gap between reminders; repeats until the user says done)
 - routine_run (target = name of a routine to run, e.g. good night, study mode, movie mode, or one the user made)
 - routine_save (target = name, message = the steps separated by commas, e.g. "silence my phone, set a timer for 25 minutes")
 - reply_msg (target = person's name or "", message = the reply text; replies to their latest message notification after confirming)
@@ -247,6 +254,28 @@ Current date and time: ${now()}
             "Sorry, I couldn't work that out."
         }
     }
+
+    /** Fetches a web page and reads out its key content as spoken prose. */
+    fun readArticle(url: String): String {
+        val html = try { Net.get(url, mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 14) Jarvis")) } catch (e: Exception) {
+            return "I couldn't open that page."
+        }
+        val body = html
+            .replace(Regex("(?is)<(script|style|noscript|nav|footer|header|svg)[^>]*>.*?</\\1>"), " ")
+            .replace(Regex("(?s)<[^>]+>"), " ")
+            .replace("&nbsp;", " ").replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'")
+            .replace(Regex("\\s+"), " ").trim().take(14000)
+        if (body.length < 200) return "That page has no readable text I can get to."
+        return text(
+            "You are JARVIS. The user asked you to read an article aloud. From the page text, give the headline and then the key content as clear spoken prose, about 200 words. " +
+                "Ignore menus, ads and cookie notices. Plain text only: no markdown, no bullets, no links. Reply in ${langName()}.",
+            "Page text:\n$body", false, "I couldn't summarise that page."
+        )
+    }
+
+    /** Translation only, nothing else added. */
+    fun translate(text: String, lang: String): String =
+        text("Translate the user's text into $lang. Reply with the translation only, no notes, no quotes, no romanisation.", text, false, text).trim()
 
     private fun clean(s: String): String = s
         .replace(Regex("\\[([^\\]]*)\\]\\([^)]*\\)"), "$1")

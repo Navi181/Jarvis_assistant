@@ -414,6 +414,15 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                         TextButton(onClick = { Prefs.saveRoutines(mine.filter { it !== r }); mine = Prefs.routines() }) { Text("Delete", color = Warn) }
                     }
                 }
+                var sched by remember { mutableStateOf(com.jarvis.assistant.core.Scheduler.list()) }
+                Text("Runs by itself (say “run good night every day at 10 pm”):", color = InkDim, fontSize = 13.sp)
+                if (sched.isEmpty()) Text("Nothing scheduled.", color = InkDim, fontSize = 13.sp)
+                sched.forEach { s0 ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(s0.name + " · daily at " + String.format("%02d:%02d", s0.hour, s0.minute), color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { com.jarvis.assistant.core.Scheduler.remove(ctx, s0.name); sched = com.jarvis.assistant.core.Scheduler.list() }) { Text("Delete", color = Warn) }
+                    }
+                }
                 Text("What Jarvis remembers about you (say “remember that …” to add):", color = InkDim, fontSize = 13.sp)
                 if (facts.isEmpty()) Text("Nothing yet.", color = InkDim, fontSize = 13.sp)
                 facts.forEachIndexed { i, f ->

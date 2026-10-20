@@ -66,7 +66,55 @@ object Actions {
         )
         "reply_msg" -> replyMsg(ctx, p)
         "reply_send" -> replySend(ctx, p)
+        "read_link" -> withContext(Dispatchers.IO) {
+            var url = p.target.trim()
+            if (url.isBlank()) {
+                val clip = try {
+                    (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+                } catch (e: Exception) { "" }
+                url = Regex("https?://\\S+").find(clip)?.value.orEmpty()
+            }
+            if (url.isBlank()) Outcome("I don't see a link. Copy one, then say read this link.")
+            else info(Brain.readArticle(url))
+        }
+        "news_topics" -> { Prefs.newsTopics = p.value; Outcome("Okay. Your news topics are ${p.value}. Say news digest any time.") }
+        "news_digest" -> withContext(Dispatchers.IO) {
+            val topics = Prefs.newsTopics.split(',', ';').map { it.trim() }.filter { it.isNotBlank() }.take(4)
+            val parts = if (topics.isEmpty()) Fallback.headlines("", 4).let { if (it.isEmpty()) emptyList() else listOf("Top headlines. " + it.joinToString(". ")) }
+                else topics.mapNotNull { t -> Fallback.headlines(t, 2).takeIf { it.isNotEmpty() }?.let { "$t. " + it.joinToString(". ") } }
+            if (parts.isEmpty()) Outcome("I couldn't get the news right now.")
+            else info(("Here's your news. " + parts.joinToString(". ")).replace("..", ".") + (if (topics.isEmpty()) " Say my news topics are, and list them, to personalise this." else ""))
+        }
+        "translate" -> withContext(Dispatchers.IO) { info(Brain.translate(p.message, p.value.ifBlank { "English" })) }
+        "translate_on" -> { Prefs.translateTo = p.value; Outcome("Translation mode on. Say anything and I'll say it in ${p.value}. Say stop translating to leave it.") }
+        "translate_off" -> { Prefs.translateTo = ""; Outcome("Translation mode off.") }
+        "park_save" -> {
+            if (p.message.isBlank()) ask("Where did you park?", p)
+            else { Prefs.parking = p.message + "\u001E" + System.currentTimeMillis(); Outcome("Got it. You parked ${p.message}.") }
+        }
+        "park_where" -> {
+            val q = Prefs.parking.split('\u001E')
+            if (q.size < 2) Outcome("You haven't told me where you parked yet.")
+            else {
+                val mins = ((System.currentTimeMillis() - (q[1].toLongOrNull() ?: 0L)) / 60000).toInt()
+                val ago = when { mins < 2 -> "just now"; mins < 90 -> "$mins minutes ago"; mins < 36 * 60 -> "${mins / 60} hours ago"; else -> "${mins / 1440} days ago" }
+                Outcome("You parked ${q[0]}, $ago.")
+            }
+        }
         "routine_run" -> routineRun(ctx, p)
+        "routine_schedule" -> {
+            val r = Routines.find(p.target)
+            if (r == null || p.hour !in 0..23) Outcome("I don't have a routine called ${p.target}.")
+            else { Scheduler.add(ctx, Scheduler.Sched(r.name, p.hour, p.minute)); Outcome("Okay. ${r.name} will run by itself every day at ${clockLabel(p.hour, p.minute)}.") }
+        }
+        "routine_unschedule" -> Outcome(if (Scheduler.remove(ctx, p.target)) "Done. ${p.target} won't run by itself any more." else "I don't have ${p.target} scheduled.")
+        "routine_scheduled" -> info(Scheduler.list().let { l -> if (l.isEmpty()) "Nothing is scheduled yet." else "Scheduled: " + l.joinToString(". ") { "${it.name} at ${clockLabel(it.hour, it.minute)}" } + "." })
+        "nag" -> {
+            val every = ((p.seconds / 60).takeIf { it > 0 } ?: 5).coerceIn(1, 180)
+            if (p.message.isBlank()) ask("What should I keep reminding you about?", p)
+            else { Scheduler.startNag(ctx, p.message, every, every); Outcome("Okay. I'll remind you to ${p.message} every ${if (every == 1) "minute" else "$every minutes"} until you say done.") }
+        }
+        "nag_stop" -> Outcome(if (Scheduler.stopNags(ctx)) "Good. I've stopped the reminders." else "No reminders are running.")
         "routine_save" -> routineSave(p)
         "routine_list" -> info(Routines.all().joinToString(". ") { it.name }.let { "Your routines are: $it. Say run, then the name." })
         "routine_delete" -> routineDelete(p)

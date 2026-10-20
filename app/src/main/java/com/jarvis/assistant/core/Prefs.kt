@@ -144,6 +144,30 @@ object Prefs {
     }
     fun saveRoutines(l: List<Routines.Routine>) = put("routines", l.joinToString("\u001F") { it.name + "\u001E" + it.steps.joinToString("\u001D") })
 
+    var newsTopics: String
+        get() = str("newsTopics")
+        set(v) = put("newsTopics", v.trim())
+
+    // ---- history, translation mode, parking
+    fun rawHistory(): String = str("history")
+    fun saveRawHistory(v: String) = put("history", v)
+    var translateTo: String
+        get() = str("translateTo")
+        set(v) = put("translateTo", v)
+    var parking: String
+        get() = str("parking")
+        set(v) = put("parking", v)
+
+    // ---- things that run by themselves (see Scheduler)
+    fun rawSchedules(): String = str("schedules")
+    fun saveRawSchedules(v: String) = put("schedules", v)
+    var nagMessage: String
+        get() = str("nagMessage")
+        set(v) = put("nagMessage", v)
+    var nagCount: Int
+        get() = sp.getInt("nagCount", 0)
+        set(v) = sp.edit().putInt("nagCount", v).apply()
+
     // ---- study
     var studyLevel: String
         get() = str("studyLevel", "high school")

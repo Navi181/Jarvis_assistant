@@ -72,6 +72,7 @@ fun JarvisUi() {
     JarvisTheme {
         var intro by remember { mutableStateOf(true) }
         var signedIn by remember { mutableStateOf(Prefs.signedIn) }
+        var showHistory by remember { mutableStateOf(false) }
         var tab by remember { mutableStateOf(if (Prefs.onboarded) Tab.Home else Tab.Setup) }
 
         // Everything Jarvis can do is switched on for you, once, right after sign-in.
@@ -113,7 +114,7 @@ fun JarvisUi() {
             IntroScreen { intro = false }
         } else if (!signedIn) {
             SignInScreen { signedIn = true }
-        } else {
+        } else Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().background(Bg)) {
                 Box(Modifier.weight(1f)) {
                     AnimatedContent(
@@ -129,7 +130,7 @@ fun JarvisUi() {
                             Tab.Home -> Box(Modifier.fillMaxSize()) {
                                 Backdrop()
                                 Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-                                    MainScreen(onSettings = { tab = Tab.Setup })
+                                    MainScreen(onSettings = { tab = Tab.Setup }, onHistory = { showHistory = true })
                                 }
                             }
                             Tab.Study -> StudyScreen()
@@ -148,6 +149,10 @@ fun JarvisUi() {
                     }
                 }
                 NavBar(tab) { tab = it }
+            }
+            if (showHistory) {
+                androidx.activity.compose.BackHandler { showHistory = false }
+                HistoryScreen { showHistory = false }
             }
         }
     }
