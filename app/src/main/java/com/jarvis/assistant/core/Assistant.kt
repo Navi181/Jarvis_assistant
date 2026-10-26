@@ -579,7 +579,7 @@ object Assistant {
         if (queue.isNotEmpty()) { pump(); return }
         if (!turnDone) return   // the rest of the answer is still being written
         // Keep the mic open when Jarvis asked you something, or after an answer in conversation mode.
-        val more = pending != null || lastReply.trimEnd().endsWith("?") || (Prefs.continuous && lastKeepOpen)
+        val more = pending != null || lastReply.trimEnd().endsWith("?") || (Prefs.continuous && lastKeepOpen && followUps == 0)
         if (more && followUps < 4) {
             followUps++
             startRecognizer()

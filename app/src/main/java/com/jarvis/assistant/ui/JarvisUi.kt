@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,10 +71,11 @@ enum class Tab(val label: String, val icon: ImageVector) {
 fun JarvisUi() {
     val ctx = LocalContext.current
     JarvisTheme {
-        var intro by remember { mutableStateOf(true) }
-        var signedIn by remember { mutableStateOf(Prefs.signedIn) }
+        val seenPrefs = remember { ctx.getSharedPreferences("jarvis_once", android.content.Context.MODE_PRIVATE) }
+        var intro by rememberSaveable { mutableStateOf(!seenPrefs.getBoolean("introSeen", false)) }
+        var signedIn by rememberSaveable { mutableStateOf(Prefs.signedIn) }
         var showHistory by remember { mutableStateOf(false) }
-        var tab by remember { mutableStateOf(if (Prefs.onboarded) Tab.Home else Tab.Setup) }
+        var tab by rememberSaveable { mutableStateOf(if (Prefs.onboarded) Tab.Home else Tab.Setup) }
 
         // Everything Jarvis can do is switched on for you, once, right after sign-in.
         val allPerms = remember {
@@ -110,9 +112,16 @@ fun JarvisUi() {
             }
         }
 
-        if (intro) {
-            IntroScreen { intro = false }
-        } else if (!signedIn) {
+        // Having reached the app once, setup is no longer the front door: next launches open Home.
+        LaunchedEffect(signedIn, intro) {
+            if (signedIn && !intro) Prefs.onboarded = true
+        }
+
+        val stage = if (intro) 0 else if (!signedIn) 1 else 2
+        androidx.compose.animation.Crossfade(targetState = stage, animationSpec = tween(450), label = "stage") { st ->
+        if (st == 0) {
+            IntroScreen { seenPrefs.edit().putBoolean("introSeen", true).apply(); intro = false }
+        } else if (st == 1) {
             SignInScreen { signedIn = true }
         } else Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().background(Bg)) {
@@ -150,10 +159,13 @@ fun JarvisUi() {
                 }
                 NavBar(tab) { tab = it }
             }
-            if (showHistory) {
-                androidx.activity.compose.BackHandler { showHistory = false }
-                HistoryScreen { showHistory = false }
-            }
+            androidx.activity.compose.BackHandler(enabled = showHistory) { showHistory = false }
+            AnimatedVisibility(
+                visible = showHistory,
+                enter = androidx.compose.animation.slideInVertically(tween(320)) { it / 6 } + fadeIn(tween(320)),
+                exit = androidx.compose.animation.slideOutVertically(tween(240)) { it / 6 } + fadeOut(tween(200))
+            ) { HistoryScreen { showHistory = false } }
+        }
         }
     }
 }

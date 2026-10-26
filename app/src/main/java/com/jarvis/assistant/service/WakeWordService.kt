@@ -201,7 +201,7 @@ class WakeWordService : Service() {
         porcupine = PorcupineManager.Builder()
             .setAccessKey(Prefs.picoKey)
             .setKeyword(Porcupine.BuiltInKeyword.JARVIS)
-            .setSensitivity(0.7f)
+            .setSensitivity(0.55f)
             .build(applicationContext, PorcupineManagerCallback { onWake() })
         porcupine?.start()
         true

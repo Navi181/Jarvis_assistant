@@ -64,7 +64,7 @@ fun HistoryScreen(onBack: () -> Unit) {
             Text("Tap a message to copy it.", color = InkDim, fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp, bottom = 6.dp))
             LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
                 items(list) { e ->
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (e.fromUser) Alignment.End else Alignment.Start) {
+                    Column(Modifier.fillMaxWidth().appear(rise = 12f), horizontalAlignment = if (e.fromUser) Alignment.End else Alignment.Start) {
                         Column(
                             Modifier.widthIn(max = 320.dp).clip(RoundedCornerShape(16.dp))
                                 .background(if (e.fromUser) Cyan.copy(alpha = 0.16f) else Ink.copy(alpha = 0.07f))

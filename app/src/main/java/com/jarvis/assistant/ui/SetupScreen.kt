@@ -13,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -475,6 +476,7 @@ private fun Choice(options: List<Pair<String, String>>, selected: String, onPick
 @Composable
 private fun Card(title: String, subtitle: String, content: @Composable () -> Unit) {
     Surface(
+        modifier = Modifier.appear().animateContentSize(),
         shape = RoundedCornerShape(20.dp),
         color = Panel,
         border = BorderStroke(1.dp, Outline)

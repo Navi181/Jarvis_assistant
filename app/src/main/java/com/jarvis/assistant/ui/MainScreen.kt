@@ -283,7 +283,7 @@ fun MainScreen(onSettings: () -> Unit, onHistory: () -> Unit = {}) {
                 (if (compact) Modifier.weight(1f).verticalScroll(replyScroll) else Modifier.heightIn(min = 96.dp)).fillMaxWidth().padding(top = 6.dp),
                 verticalArrangement = if (compact) Arrangement.spacedBy(8.dp, Alignment.Top) else Arrangement.spacedBy(8.dp, Alignment.Bottom)
             ) {
-                msgs.takeLast(if (compact) 3 else 2).forEach { m -> key(m.id) { Bubble(m) } }
+                msgs.takeLast(if (compact) 3 else 2).forEach { m -> key(m.id) { Box(Modifier.appear()) { Bubble(m) } } }
             }
 
             // suggestions

@@ -66,3 +66,4 @@
 - H17: Routines that run by themselves at a set time ("run good night every day at 10 pm"), reminders that repeat until you say done, survive reboot. DONE (not yet built in cloud)
 - H18: History screen (clock icon on Home: read, tap to copy, copy all, share, clear); translation mode ("translate to Hindi" / "stop translating"; one-off "translate good morning to French"); "I parked on level 3" / "where did I park". DONE (not yet built in cloud)
 - H19: Read a link aloud ("read this link" after copying one, or "read <url>"); news digest ("news digest", "my news topics are cricket and tech"); home-screen widget (tap to talk + next scheduled item). DONE (not yet built in cloud)
+- H20: Motion (screens crossfade, bubbles/cards/history float in, history slides up); intro shows only the first time; app opens on Home after first run; conversation mode re-opens the mic once (not repeatedly); wake word less sensitive (0.55). DONE (not yet built in cloud)
