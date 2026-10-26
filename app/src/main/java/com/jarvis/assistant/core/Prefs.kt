@@ -148,6 +148,35 @@ object Prefs {
         get() = str("newsTopics")
         set(v) = put("newsTopics", v.trim())
 
+    // ---- generic storage for the "life" features, backup and erase
+    fun blob(k: String): String = str(k)
+    fun setBlob(k: String, v: String) = put(k, v)
+    var voiceMood: String
+        get() = str("voiceMood", "calm")
+        set(v) = put("voiceMood", v)
+
+    /** Keys that hold personal data Jarvis made (never the AI keys). */
+    private val dataKeys = listOf("facts", "routines", "schedules", "dictionary", "expenses", "habits", "lists", "fixes", "newsTopics", "parking", "history", "translateTo", "voiceMood")
+
+    fun exportAll(): String = org.json.JSONObject().also { j -> dataKeys.forEach { j.put(it, str(it)) } }.toString()
+
+    fun importAll(json: String): Int {
+        val j = org.json.JSONObject(json)
+        var n = 0
+        dataKeys.forEach { if (j.has(it)) { put(it, j.optString(it)); n++ } }
+        return n
+    }
+
+    fun eraseData() = dataKeys.forEach { put(it, "") }
+
+    // ---- voice layer: custom dictionary, floating bar
+    fun dictionary(): List<String> = str("dictionary").split('\u001F').filter { it.isNotBlank() }
+    fun addWords(w: List<String>) = put("dictionary", (dictionary() + w.map { it.trim() }.filter { it.isNotBlank() }).distinctBy { it.lowercase() }.takeLast(200).joinToString("\u001F"))
+    fun clearDictionary() = put("dictionary", "")
+    var voiceBar: Boolean
+        get() = sp.getBoolean("voiceBar", true)
+        set(v) = sp.edit().putBoolean("voiceBar", v).apply()
+
     // ---- history, translation mode, parking
     fun rawHistory(): String = str("history")
     fun saveRawHistory(v: String) = put("history", v)

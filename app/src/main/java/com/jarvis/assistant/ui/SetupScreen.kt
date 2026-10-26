@@ -319,6 +319,11 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     Text("Keep listening after answers", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     androidx.compose.material3.Switch(checked = conv, onCheckedChange = { conv = it; Prefs.continuous = it })
                 }
+                var bar by remember { mutableStateOf(Prefs.voiceBar) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Floating voice bar (dictate, edit, ask in any app)", color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = bar, onCheckedChange = { bar = it; Prefs.voiceBar = it; com.jarvis.assistant.system.VoiceBar.refresh() })
+                }
                 Status("Read notifications aloud", com.jarvis.assistant.service.JarvisNotificationListener.connected)
                 PrimaryButton("Allow notification access") { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
                 Status("Unrestricted battery (keeps hands-free alive)", batteryOk)
@@ -430,6 +435,44 @@ fun SetupScreen(canGoBack: Boolean, onDone: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(f, color = Ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
                         TextButton(onClick = { Prefs.removeFact(i); facts = Prefs.facts() }) { Text("Delete", color = Warn) }
+                    }
+                }
+            }
+
+            Card("Your data, library & voice mood", "Everything stays on this phone. Back it up, move it to a new phone, or wipe it.") {
+                var tick by remember { mutableStateOf(0) }
+                var mood by remember { mutableStateOf(Prefs.voiceMood) }
+                var sure by remember { mutableStateOf(false) }
+                Text("Voice mood", color = Ink, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("calm", "brisk", "warm", "playful").forEach { m ->
+                        TextButton(onClick = { mood = m; Prefs.voiceMood = m }) {
+                            Text(m.replaceFirstChar { it.uppercase() }, color = if (mood == m) Cyan else InkDim, fontSize = 13.sp)
+                        }
+                    }
+                }
+                PrimaryButton("Run my morning brief every day at 7:00") {
+                    com.jarvis.assistant.core.Scheduler.add(ctx, com.jarvis.assistant.core.Scheduler.Sched("morning brief", 7, 0))
+                    android.widget.Toast.makeText(ctx, "Done. Change it by saying: run morning brief every day at 8 am", android.widget.Toast.LENGTH_LONG).show()
+                }
+                val lib = remember(tick) { com.jarvis.assistant.core.Life.libraryNames(ctx) }
+                Text(if (lib.isEmpty()) "Library: empty. Attach a file or photo, then say “save this”." else "Library (" + lib.size + "): " + lib.takeLast(6).joinToString(", "), color = InkDim, fontSize = 13.sp)
+                if (lib.isNotEmpty()) PrimaryButton("Clear library") { com.jarvis.assistant.core.Life.libraryClear(ctx); tick++ }
+                PrimaryButton("Back up my data (share)") {
+                    val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, Prefs.exportAll())
+                    ctx.startActivity(Intent.createChooser(i, "Save backup").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+                PrimaryButton("Restore from copied backup") {
+                    val clip = try { (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString().orEmpty() } catch (e: Exception) { "" }
+                    val n = try { Prefs.importAll(clip) } catch (e: Exception) { -1 }
+                    android.widget.Toast.makeText(ctx, if (n > 0) "Restored." else "Copy the backup text first, then tap this.", android.widget.Toast.LENGTH_LONG).show()
+                }
+                if (!sure) PrimaryButton("Erase everything Jarvis stored") { sure = true }
+                else {
+                    Text("This deletes history, memory, routines, lists, expenses, habits and the library. Your AI keys stay.", color = Warn, fontSize = 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { com.jarvis.assistant.core.Life.eraseAll(ctx); sure = false; tick++; android.widget.Toast.makeText(ctx, "Erased.", android.widget.Toast.LENGTH_SHORT).show() }) { Text("Yes, erase", color = Warn) }
+                        TextButton(onClick = { sure = false }) { Text("Keep it", color = InkDim) }
                     }
                 }
             }

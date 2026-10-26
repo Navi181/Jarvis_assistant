@@ -11,6 +11,7 @@ object Routines {
     val builtins = listOf(
         Routine("good night", listOf("what's on my schedule tomorrow", "silent", "set brightness to 10 percent")),
         Routine("study mode", listOf("silent", "set a timer for 25 minutes")),
+        Routine("morning brief", listOf("what's my day", "news digest", "what's the weather")),
         Routine("movie mode", listOf("silent", "set brightness to 30 percent"))
     )
 

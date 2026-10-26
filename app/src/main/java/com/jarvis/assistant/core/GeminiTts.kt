@@ -54,7 +54,12 @@ object GeminiTts {
         val prompt = "# AUDIO PROFILE: Jarvis\n" +
             "A deep, refined British male voice with quiet confidence.\n\n" +
             "### DIRECTOR'S NOTES\n" +
-            "Style: calm, composed, slightly dry. Pace: unhurried. Do not read these notes aloud.\n\n" +
+            (when (Prefs.voiceMood) {
+                "brisk" -> "Style: crisp, efficient and confident. Pace: quick but clear. Do not read these notes aloud.\n\n"
+                "warm" -> "Style: warm, friendly and reassuring, with a gentle smile. Pace: relaxed. Do not read these notes aloud.\n\n"
+                "playful" -> "Style: witty, light and playful, with a hint of a smile. Pace: lively. Do not read these notes aloud.\n\n"
+                else -> "Style: calm, composed, slightly dry. Pace: unhurried. Do not read these notes aloud.\n\n"
+            }) +
             "#### TRANSCRIPT\n" + text
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))

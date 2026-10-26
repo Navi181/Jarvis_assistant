@@ -28,10 +28,12 @@ class JarvisAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        try { VoiceBar.refresh() } catch (_: Exception) {}
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        try { VoiceBar.hide() } catch (_: Exception) {}
         return super.onUnbind(intent)
     }
 

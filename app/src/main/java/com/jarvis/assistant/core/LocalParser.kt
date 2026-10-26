@@ -29,6 +29,57 @@ object LocalParser {
         if (Regex("^(?:who are you|what are you|what(?:'s| is) your name)$").matches(t)) return Plan("about")
         if (Regex("^(?:help|what can you do|what do you do|what are your (?:skills|features)|show (?:me )?(?:your )?skills)$").matches(t)) return Plan("help")
         if (!Regex("^(?:translate|how (?:do|would) (?:you|i) say)\\b").containsMatchIn(t) && Regex("\\b(?:good morning|morning briefing|daily briefing|brief me|my briefing|what(?:'s| is) my day)\\b").containsMatchIn(t)) return Plan("briefing")
+        // ---- money, habits, lists, calendar changes, library
+        Regex("^(?:i )?(?:spent|paid|used)\\s+(?:rs\\.?\\s*|rupees\\s*|₹\\s*)?(\\d+(?:\\.\\d+)?)(?:\\s*(?:rupees|rs|bucks))?(?:\\s+(?:on|for|at))?\\s*(.*)$").find(t)?.let {
+            return Plan("expense_add", value = it.groupValues[1], message = it.groupValues[2].trim())
+        }
+        Regex("^(?:how much (?:did|have) i (?:spend|spent)|(?:show |what(?:'s| are) )?my (?:expenses|spending))(?: (today|yesterday|this week|this month|week|month))?$").find(t)?.let {
+            return Plan("expense_report", value = it.groupValues[1].ifBlank { "today" })
+        }
+        Regex("^(?:track|start tracking|add)(?: a| the)? habit(?: of| called)? (.+)$|^(?:track|start tracking) (?:my )?habit (.+)$").find(t)?.let {
+            return Plan("habit_add", target = (it.groupValues[1].ifBlank { it.groupValues[2] }).trim())
+        }
+        Regex("^(?:log|mark|check in)(?: my| the)?(?: habit)? (.+?)(?: as)?(?: done| complete| completed)?(?: for)?(?: today)?$").find(t)?.let {
+            if (!Regex("\\b(?:call|sms|message|reminder|alarm|note|timer)\\b").containsMatchIn(it.groupValues[1])) return Plan("habit_log", target = it.groupValues[1].trim())
+        }
+        Regex("^(?:how(?:'s| is) my|what(?:'s| is) my|show my) (.+?) streak$").find(t)?.let { return Plan("habit_show", target = it.groupValues[1].trim()) }
+        if (Regex("^(?:my habits|show my habits|how am i doing on my habits)$").matches(t)) return Plan("habit_show")
+        Regex("^(?:add|put) (.+?) (?:to|on|in) my (?:(\\w+) )?(?:list|to-?do)$|^add (.+?) to (?:the )?(\\w+) list$").find(t)?.let {
+            val items = it.groupValues[1].ifBlank { it.groupValues[3] }
+            val name = it.groupValues[2].ifBlank { it.groupValues[4] }.ifBlank { "shopping" }
+            if (items.isNotBlank() && !Regex("\\b(?:playlist|queue|dictionary|contacts?|calendar|cart)\\b").containsMatchIn(t)) return Plan("list_add", target = name, message = items)
+        }
+        Regex("^(?:what(?:'s| is) on|read|show|open) my (?:(\\w+) )?list$").find(t)?.let { return Plan("list_show", target = it.groupValues[1].ifBlank { "shopping" }) }
+        Regex("^(?:remove|delete|take off) (.+?) (?:from|off) my (?:(\\w+) )?list$").find(t)?.let { return Plan("list_remove", target = it.groupValues[2].ifBlank { "shopping" }, message = it.groupValues[1]) }
+        Regex("^(?:clear|empty) my (?:(\\w+) )?list$").find(t)?.let { return Plan("list_clear", target = it.groupValues[1].ifBlank { "shopping" }) }
+        Regex("^(?:share|send) my (?:(\\w+) )?list$").find(t)?.let { return Plan("list_share", target = it.groupValues[1].ifBlank { "shopping" }) }
+        Regex("^(?:move|reschedule|shift|push) (?:my )?(.+?) (?:to|at|till|until) (.+)$").find(t)?.let { m ->
+            val c = parseClock(m.groupValues[2], now)
+            if (c != null && !Regex("\\b(?:alarm|timer|reminder)\\b").containsMatchIn(m.groupValues[1])) return Plan("cal_move", target = m.groupValues[1].replace(Regex(" (?:meeting|event|appointment|call)$"), "").trim(), hour = c.first, minute = c.second)
+        }
+        Regex("^(?:cancel|delete|remove) (?:my |the )?(.+?) (?:meeting|event|appointment)$").find(t)?.let { return Plan("cal_cancel", target = it.groupValues[1].trim()) }
+        Regex("^(?:what(?:'s| is)|when am i|am i|when(?:'s| is)) (?:my )?(?:free|available|open)(?: time)?(?: (today|tomorrow))?$|^when am i free(?: (today|tomorrow))?$").find(t)?.let {
+            return Plan("cal_free", value = it.groupValues[1].ifBlank { it.groupValues[2] }.ifBlank { "today" })
+        }
+        if (Regex("^(?:save|add|keep|remember) (?:this|it)(?: (?:file|photo|picture|pdf|bill|receipt|document|image))?(?: to (?:my )?(?:library|saved files))?$|^save (?:this|it) to (?:my )?library$").matches(t) &&
+            (try { Assistant.media.value != null } catch (e: Throwable) { false })) return Plan("lib_save")
+        Regex("^(?:save|add|keep) (?:this|it) (?:as|called|named) (.+)$").find(t)?.let {
+            if (try { Assistant.media.value != null } catch (e: Throwable) { false }) return Plan("lib_save", message = it.groupValues[1].trim())
+        }
+        Regex("^(?:ask my library|from my library|in my library|in my saved files|search my library for|search my saved files for|find in my library)[:,]? (.+)$").find(t)?.let { return Plan("lib_ask", message = it.groupValues[1].trim()) }
+        Regex("^(?:what|when|how much|who|which) (?:was|is|were) (?:the )?(.+?) (?:on|in|from) (?:my |the |that )?(?:saved )?(?:bill|receipt|invoice|ticket|document|file|photo|pdf|statement)s?$").find(t)?.let { return Plan("lib_ask", message = t) }
+        Regex("^when i say (.+?) i (?:mean|want|meant) (.+)$").find(t)?.let { return Plan("fix_add", target = it.groupValues[1].trim(), value = it.groupValues[2].trim()) }
+
+        // ---- voice layer: type, edit and ask about what is in front of you
+        if (Regex("^(?:start |begin |turn on )?(?:dictation|dictate)(?: mode)?$").matches(t)) return Plan("dictate")
+        Regex("^(?:dictate|type out|type)\\s+(.{2,})$").find(t)?.let { return Plan("dictate", message = it.groupValues[1].trim()) }
+        if (Regex("^(?:(?:make|rewrite|rephrase|reword|shorten|expand|improve|polish|proofread|correct|fix|translate|summari[sz]e|change)\\s+(?:this|that|the selection|the selected text|the text|my text|my message|my reply)\\b.*|(?:fix|correct) (?:the |my )?(?:grammar|spelling|typos|mistakes)|make it (?:shorter|longer|better|more .+|less .+)|(?:shorten|rewrite|rephrase|proofread) it)$").matches(t) &&
+            !Regex("\\b(?:screen|page)\\b").containsMatchIn(t) && !Regex("^(?:summari[sz]e|translate) (?:this|that)$").matches(t)) return Plan("edit_text", message = t)
+        if (Regex("^(?:summari[sz]e|translate|explain|read|simplify) (?:this|that|the|my)? ?(?:screen|page|article|chat|conversation|message|email|text|post)(?: .+)?$|^(?:summari[sz]e|translate|explain) (?:this|that)(?: .+)?$|^what does (?:this|that) (?:say|mean)$|^what(?:'s| is) this (?:about|page|screen)$").matches(t))
+            return Plan("screen_ask", message = t)
+        Regex("^(?:add|put|save) (.+?) (?:to|in|into) my dictionary$").find(t)?.let { return Plan("dict_add", value = it.groupValues[1].replace(Regex("\\s+and\\s+"), ", ").trim()) }
+        if (Regex("^(?:what(?:'s| is) in |show |read |list )?my dictionary$").matches(t)) return Plan("dict_list")
+
         // ---- links, news digest
         Regex("^(?:read|summari[sz]e)(?: out| aloud)?(?: me)? (?:this |that |the )?(https?://\\S+)$").find(lower.trim().trimEnd('.', '!', '?', ' '))?.let {
             return Plan("read_link", target = Regex("https?://\\S+").find(raw)?.value?.trimEnd('.', ',', ')') ?: it.groupValues[1])
@@ -72,6 +123,11 @@ object LocalParser {
             (try { Prefs.nagMessage.isNotBlank() } catch (e: Exception) { false })) return Plan("nag_stop")
 
         Routines.parse(t)?.let { return it }
+
+        // "do this and then that": several commands in one go
+        if (Regex("\\b(?:and then|, then|then|and also|after that)\\b").containsMatchIn(t) &&
+            !Regex("^(?:remind|remember|note|text|message|send|reply|create|set a reminder|write|dictate|type)\\b").containsMatchIn(t) &&
+            Routines.splitSteps(t).size >= 2) return Plan("chain", message = t)
 
         // ---- look at something with the camera
         if (Regex("^(?:take a )?(?:look at (?:this|that)|what(?:'s| is) (?:this|that)(?: thing)?|what am i (?:looking|pointing) at|identify (?:this|that)|scan this)$").matches(t)) return Plan("look")
@@ -296,6 +352,9 @@ object LocalParser {
                 if (pending.target.isBlank()) pending.copy(target = a) else pending.copy(message = a)
             "note_add" -> pending.copy(message = a)
             "park_save" -> pending.copy(message = a)
+            "dictate" -> pending.copy(message = answerRaw.trim())
+            "cal_cancel" -> if (Regex("^(?:yes|yeah|yep|yup|sure|do it|ok|okay|confirm|please do|go ahead)\\b", RegexOption.IGNORE_CASE).containsMatchIn(a)) pending.copy(value = "yes") else Plan("noop")
+            "list_add" -> pending.copy(message = a)
             "reply_msg" -> pending.copy(message = a)
             "reply_send" ->
                 if (Regex("^(?:yes|yeah|yep|yup|sure|send|send it|go ahead|do it|ok|okay|please do|confirm)\\b", RegexOption.IGNORE_CASE).containsMatchIn(a)) pending.copy(value = "yes") else Plan("noop")

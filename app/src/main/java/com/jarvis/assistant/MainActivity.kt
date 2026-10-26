@@ -86,11 +86,15 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         com.jarvis.assistant.system.ListenOrb.foreground = false
+        com.jarvis.assistant.system.VoiceBar.appForeground = false
+        com.jarvis.assistant.system.VoiceBar.refresh()
     }
 
     override fun onResume() {
         super.onResume()
         com.jarvis.assistant.system.ListenOrb.foreground = true
+        com.jarvis.assistant.system.VoiceBar.appForeground = true
+        com.jarvis.assistant.system.VoiceBar.refresh()
         com.jarvis.assistant.system.ListenOrb.hide()
         // If the app was closed or restarted mid-session, pin the screen again.
         if (FocusLock.active()) runCatching { startLockTask() }

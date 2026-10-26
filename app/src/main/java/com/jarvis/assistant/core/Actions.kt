@@ -85,6 +85,16 @@ object Actions {
             if (parts.isEmpty()) Outcome("I couldn't get the news right now.")
             else info(("Here's your news. " + parts.joinToString(". ")).replace("..", ".") + (if (topics.isEmpty()) " Say my news topics are, and list them, to personalise this." else ""))
         }
+        in Life.actions -> Life.run(ctx, p)
+        "dictate" -> withContext(Dispatchers.Main) { dictate(ctx, p) }
+        "edit_text" -> withContext(Dispatchers.Main) { editText(ctx, p) }
+        "screen_ask" -> withContext(Dispatchers.IO) { screenAsk(p) }
+        "dict_add" -> {
+            val words = p.value.split(',', ';').map { it.trim() }.filter { it.isNotBlank() }
+            if (words.isEmpty()) Outcome("Which words should I remember to spell?") else { Prefs.addWords(words); Outcome("Added ${words.joinToString(", ")} to your dictionary.") }
+        }
+        "dict_list" -> info(Prefs.dictionary().let { if (it.isEmpty()) "Your dictionary is empty. Say add a name to my dictionary." else "Your dictionary has " + it.joinToString(", ") + "." })
+        "chain" -> chain(ctx, p)
         "translate" -> withContext(Dispatchers.IO) { info(Brain.translate(p.message, p.value.ifBlank { "English" })) }
         "translate_on" -> { Prefs.translateTo = p.value; Outcome("Translation mode on. Say anything and I'll say it in ${p.value}. Say stop translating to leave it.") }
         "translate_off" -> { Prefs.translateTo = ""; Outcome("Translation mode off.") }
@@ -848,6 +858,53 @@ object Actions {
         if (p.value != "yes") return Outcome("Okay, I won't send it.")
         val r = JarvisNotificationListener.latestReplyable(ctx, p.target) ?: return Outcome("That message has gone from your notifications, so I couldn't reply.")
         return Outcome(if (JarvisNotificationListener.sendReply(r, p.message)) "Sent." else "I couldn't send that reply.")
+    }
+
+    private suspend fun dictate(ctx: Context, p: Plan): Outcome {
+        if (p.message.isBlank()) return ask("Go ahead, I'm listening.", p)
+        if (com.jarvis.assistant.system.JarvisAccessibilityService.instance == null) return Outcome("I need Accessibility switched on in setup to type for you.")
+        val f = com.jarvis.assistant.system.VoiceLayer.field()
+            ?: return Outcome("Tap into a text box first, then try again.")
+        val pkg = f.pkg
+        val clean = withContext(Dispatchers.IO) { Brain.polish(p.message, com.jarvis.assistant.system.VoiceLayer.tone(pkg)) } ?: p.message
+        return if (com.jarvis.assistant.system.VoiceLayer.insert(ctx, clean)) Outcome("")
+        else Outcome("This app wouldn't let me type. I copied it, so you can paste it.")
+    }
+
+    private suspend fun editText(ctx: Context, p: Plan): Outcome {
+        val f = com.jarvis.assistant.system.VoiceLayer.field()
+        if (f == null || f.text.isBlank()) {
+            // nothing to edit in a text box: "translate this" then means the screen
+            return if (Regex("\\btranslat").containsMatchIn(p.message)) withContext(Dispatchers.IO) { screenAsk(p) }
+            else Outcome("Tap into the text and select what you want changed, then tell me.")
+        }
+        val target = if (f.hasSelection) f.text.substring(f.start, f.end) else f.text
+        val out = withContext(Dispatchers.IO) { Brain.rewrite(target, p.message, com.jarvis.assistant.system.VoiceLayer.tone(f.pkg)) }
+            ?: return Outcome("I couldn't rewrite that right now.")
+        return if (com.jarvis.assistant.system.VoiceLayer.replace(ctx, f, out)) Outcome("")
+        else Outcome("This app wouldn't let me change the text. I copied the new version, so you can paste it.")
+    }
+
+    private fun screenAsk(p: Plan): Outcome {
+        val svc = com.jarvis.assistant.system.JarvisAccessibilityService.instance
+            ?: return Outcome("I need Accessibility switched on in setup to see your screen.")
+        val (pkg, items) = svc.items()
+        if (items.isEmpty()) return Outcome("I can't read anything on this screen.")
+        val text = items.joinToString("\n") { it.label }.take(6000)
+        return info(Brain.askScreen(pkg, text, p.message.ifBlank { "Summarise this screen." }))
+    }
+
+    private suspend fun chain(ctx: Context, p: Plan): Outcome {
+        val said = ArrayList<String>()
+        for (step in Routines.splitSteps(p.message)) {
+            val plan = (LocalParser.parse(step) ?: try { Brain.plan(step, emptyList()) } catch (e: Exception) { null }) ?: continue
+            if (plan.action == "chain") continue
+            val out = try { run(ctx, plan) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { continue }
+            if (out.awaiting != null) return Outcome((said + out.reply).joinToString(" "), awaiting = out.awaiting, keepOpen = true)
+            if (out.reply.isNotBlank() && plan.action != "answer") said.add(out.reply)
+            kotlinx.coroutines.delay(900)
+        }
+        return Outcome(said.joinToString(" ").ifBlank { "Done." })
     }
 
     private suspend fun routineRun(ctx: Context, p: Plan): Outcome {

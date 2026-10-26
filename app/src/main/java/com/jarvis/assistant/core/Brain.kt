@@ -97,6 +97,17 @@ action must be one of:
 - calendar (message = event title, hour and minute = start, value = today | tomorrow | yyyy-MM-dd, seconds = length in seconds; opens the calendar prefilled)
 - read_link (target = web address; blank = the link or text just copied)
 - news_digest (read headlines for the user's topics) and news_topics (value = comma separated topics)
+- expense_add (value = amount, message = what for) and expense_report (value = today | yesterday | this week | this month)
+- habit_add / habit_log / habit_show (target = habit name)
+- list_add (target = list name, default shopping; message = items) / list_show / list_remove / list_clear / list_share
+- cal_move (target = event title, hour, minute) / cal_cancel (target) / cal_free (value = today | tomorrow)
+- lib_save (save the attached file to the library) / lib_ask (message = question about saved files)
+- fix_add (target = what is heard, value = what is meant)
+- dictate (message = what to type into the app in front; blank = ask what to type)
+- edit_text (message = the instruction, e.g. make this shorter; works on the selected text in the app in front)
+- screen_ask (message = question about what is on screen: summarise, translate, explain)
+- dict_add (value = words or names to always spell right)
+- chain (message = several commands joined by "and then")
 - translate (message = text, value = target language; one-off translation)
 - translate_on (value = language; keep translating everything the user says) and translate_off
 - park_save (message = where the car is) and park_where
@@ -272,6 +283,45 @@ Current date and time: ${now()}
             "Page text:\n$body", false, "I couldn't summarise that page."
         )
     }
+
+    /** Straight model call with no friendly error text: null when it fails, so nothing odd is ever typed into your apps. */
+    private fun rawText(system: String, user: String): String? {
+        if (!Prefs.hasAnyKey) return null
+        return try { clean(Llm.answer(system, user, false)).trim().ifBlank { null } } catch (e: Exception) { null }
+    }
+
+    private fun dictLine(): String = try {
+        Prefs.dictionary().takeIf { it.isNotEmpty() }?.let { " Always spell these exactly: " + it.joinToString(", ") + "." } ?: ""
+    } catch (e: Exception) { "" }
+
+    /** Dictated speech turned into clean, ready-to-send writing. Null when the AI is unavailable. */
+    fun polish(spoken: String, tone: String): String? = rawText(
+        "You turn dictated speech into clean written text. Remove filler words (um, uh, like, you know), false starts and repeats; fix grammar, punctuation and capitalisation. " +
+            "Obey spoken formatting such as new line, new paragraph, full stop, comma, question mark. Keep the meaning and the speaker's own words and language; never translate, never add anything. " +
+            "Style: $tone.${dictLine()} Reply with the final text only: no quotes, no comments.",
+        spoken
+    )
+
+    /** Applies a spoken instruction ("make it shorter", "more polite") to some text. Null on failure. */
+    fun rewrite(text: String, instruction: String, tone: String): String? = rawText(
+        "You edit text. Apply the user's instruction to the text and reply with only the resulting text: no quotes, no explanation. " +
+            "Keep the same language unless asked to translate, and keep the meaning unless asked to change it. Default style: $tone.${dictLine()}",
+        "Instruction: $instruction\n\nText:\n$text"
+    )
+
+    /** Answers a question about what is on screen (summarise, translate, explain, find). */
+    fun askScreen(pkg: String, screen: String, question: String): String = text(
+        "You are JARVIS. The user asks about what is on their phone screen. Answer the request using only the screen text, in at most 5 short spoken sentences, " +
+            "unless they ask to translate or rewrite it, in which case give the full result. Plain text, no markdown. Reply in ${langName()}.",
+        "App: $pkg\nScreen text:\n$screen\n\nRequest: $question", false
+    )
+
+    /** Answers a question from the user's saved files and photos. */
+    fun fromLibrary(question: String, corpus: String): String = text(
+        "You are JARVIS. The user saved files and photos in their personal library; each ITEM below is a summary. Answer the question using only those items, " +
+            "say which item the answer came from, and give exact numbers, names and dates. If it isn't there, say so. Plain text, short, spoken. Reply in ${langName()}.",
+        "Library:\n$corpus\n\nQuestion: $question", false
+    )
 
     /** Translation only, nothing else added. */
     fun translate(text: String, lang: String): String =

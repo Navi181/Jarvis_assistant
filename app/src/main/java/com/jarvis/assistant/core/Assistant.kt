@@ -37,6 +37,7 @@ data class Msg(val fromUser: Boolean, val text: String, val id: Long = System.na
  */
 object Assistant {
     private lateinit var app: Application
+    fun appContext(): android.content.Context = app
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -160,6 +161,16 @@ object Assistant {
     val busy: Boolean get() = phase.value != Phase.IDLE
 
     /** Start listening for a command. */
+    /** Set by the floating bar: what the next thing you say is for ("dictate", "edit", "ask"). */
+    @Volatile var layerMode: String? = null
+
+    fun listenIn(mode: String) {
+        if (phase.value == Phase.LISTENING) { cancel(); return }
+        layerMode = mode
+        listen()
+        if (phase.value != Phase.LISTENING) layerMode = null
+    }
+
     fun listen() {
         if (phase.value == Phase.LISTENING || phase.value == Phase.THINKING) return
         stopSpeech()
@@ -299,11 +310,12 @@ object Assistant {
         }
     }
 
-    private fun handle(text: String) {
+    private fun handle(heard: String) {
+        val text = try { Life.fix(heard) } catch (e: Exception) { heard }
         partial.value = ""
         level.value = 0f
         val attached = media.value
-        if (attached != null && pending == null) {
+        if (attached != null && pending == null && layerMode == null) {
             // questions go to the attached file; clear device commands ("call mom", "set a timer") still work as usual
             val device = LocalParser.parse(text)?.action
             if (device == null || device in setOf("answer", "elaborate", "web_answer") || mediaClear(text)) {
@@ -323,7 +335,13 @@ object Assistant {
         job = scope.launch {
             val out = try {
                 val tl = try { Prefs.translateTo } catch (e: Exception) { "" }
-                val plan = waiting?.let { LocalParser.complete(it, text) }
+                val lm = layerMode
+                layerMode = null
+                val plan = (if (lm != null && waiting == null) when (lm) {
+                    "dictate" -> Plan("dictate", message = text)
+                    "edit" -> Plan("edit_text", message = text)
+                    else -> Plan("screen_ask", message = text)
+                } else null) ?: waiting?.let { LocalParser.complete(it, text) }
                     ?: if (tl.isNotBlank() && LocalParser.parse(text)?.action != "translate_off") Plan("translate", message = text, value = tl)
                     else Brain.plan(text, history)
                 Actions.run(app, plan)
@@ -589,6 +607,7 @@ object Assistant {
     }
 
     private fun finish() {
+        layerMode = null
         streamSink = null; liveId = 0L; earlyPrefix = ""; turnDone = true; queue.clear(); segPlaying = false; waitingSeg = null
         phase.value = Phase.IDLE
         level.value = 0f

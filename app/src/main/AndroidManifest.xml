@@ -107,6 +107,17 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/jarvis_widget_info" />
         </receiver>
 
+        <service
+            android:name=".system.JarvisTile"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="Ask Jarvis"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- Daily routines and repeating reminders -->
         <receiver android:name=".core.ScheduleReceiver" android:exported="false" />
         <receiver android:name=".core.BootReceiver" android:exported="true">

@@ -38,6 +38,8 @@ fun HistoryScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     var list by remember { mutableStateOf(History.all()) }
     val state = rememberLazyListState()
+    var q by remember { mutableStateOf("") }
+    val shown = if (q.isBlank()) list else list.filter { it.text.contains(q, true) }
     LaunchedEffect(list.size) { if (list.isNotEmpty()) state.scrollToItem(list.size - 1) }
 
     fun copy(text: String) {
@@ -56,6 +58,11 @@ fun HistoryScreen(onBack: () -> Unit) {
             }) { Icon(Icons.Rounded.Share, "Share", tint = InkDim) }
             IconButton(onClick = { History.clear(); list = emptyList() }) { Icon(Icons.Rounded.DeleteOutline, "Clear", tint = Warn) }
         }
+        androidx.compose.material3.OutlinedTextField(
+            value = q, onValueChange = { q = it }, singleLine = true, placeholder = { Text("Search your conversations", color = InkDim) },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Cyan, unfocusedBorderColor = Outline)
+        )
         if (list.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Nothing here yet. Your conversations will show up here.", color = InkDim, fontSize = 14.sp)
@@ -63,7 +70,7 @@ fun HistoryScreen(onBack: () -> Unit) {
         } else {
             Text("Tap a message to copy it.", color = InkDim, fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp, bottom = 6.dp))
             LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-                items(list) { e ->
+                items(shown) { e ->
                     Column(Modifier.fillMaxWidth().appear(rise = 12f), horizontalAlignment = if (e.fromUser) Alignment.End else Alignment.Start) {
                         Column(
                             Modifier.widthIn(max = 320.dp).clip(RoundedCornerShape(16.dp))
